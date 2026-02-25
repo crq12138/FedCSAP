@@ -45,6 +45,8 @@ minimize_logging: true
 momentum: 0.9
 new_adaptive_attack: false
 no_models: 25
+committee_validation_sample_size: null
+committee_validation_sample_ratio: 0.2
 noniid: true
 number_of_adversary_dba: 30
 number_of_adversary_inner_product_manipulation: 40

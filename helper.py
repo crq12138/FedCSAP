@@ -19,6 +19,7 @@ import json
 import numpy as np
 import config
 import copy
+import random
 import utils.csv_record
 
 from utils.utils import get_hash_from_param_file
@@ -31,6 +32,7 @@ from flshield_utils.validation_test import validation_test
 from flshield_utils.impute_validation import impute_validation
 
 from torch.utils.data import SubsetRandomSampler
+from torch.utils.data import ConcatDataset, DataLoader, Subset
 from sklearn.cluster import AgglomerativeClustering, SpectralClustering, KMeans
 from scipy.spatial import distance
 from sklearn.metrics.pairwise import cosine_distances, euclidean_distances, cosine_similarity
@@ -128,6 +130,64 @@ class Helper:
             self.good_count = [0 for _ in range(self.params['number_of_total_participants'])]
             self.bad_count = [0 for _ in range(self.params['number_of_total_participants'])]
             self.prob_good_model = [0. for _ in range(self.params['number_of_total_participants'])]
+
+        self.current_committee = []
+        self.public_validation_pool = None
+        self.committee_validation_loader = None
+
+    def elect_committee(self, epoch):
+        committee_size = self.params['committee_size']
+        if committee_size is None:
+            committee_size = self.params['no_models']
+        committee_size = min(int(committee_size), len(self.participants_list))
+        committee_rng = random.Random(314159 + epoch)
+        self.current_committee = committee_rng.sample(self.participants_list, committee_size)
+        return self.current_committee
+
+    def sample_public_validation_loader(self, epoch):
+        if self.public_validation_pool is None:
+            if self.params['type'] == config.TYPE_LOAN and hasattr(self, 'allStateHelperList'):
+                state_datasets = []
+                for state_helper in self.allStateHelperList:
+                    state_loader = state_helper.get_testloader()
+                    if hasattr(state_loader, 'dataset'):
+                        state_datasets.append(state_loader.dataset)
+                if len(state_datasets) > 0:
+                    self.public_validation_pool = ConcatDataset(state_datasets)
+            elif hasattr(self, 'test_data') and self.test_data is not None:
+                if hasattr(self.test_data, 'dataset'):
+                    self.public_validation_pool = self.test_data.dataset
+                else:
+                    self.public_validation_pool = self.test_data
+
+        if self.public_validation_pool is None:
+            self.committee_validation_loader = None
+            return None
+
+        pool_size = len(self.public_validation_pool)
+        if pool_size == 0:
+            self.committee_validation_loader = None
+            return None
+
+        sample_size = self.params['committee_validation_sample_size']
+        sample_ratio = self.params['committee_validation_sample_ratio']
+        if sample_size is None:
+            if sample_ratio is None:
+                raise ValueError('committee_validation_sample_size or committee_validation_sample_ratio must be configured in params.')
+            sample_size = max(1, int(pool_size * float(sample_ratio)))
+
+        sample_size = min(int(sample_size), pool_size)
+        sampler_rng = random.Random(271828 + epoch)
+        sampled_indices = sampler_rng.sample(range(pool_size), sample_size)
+
+        sampled_dataset = Subset(self.public_validation_pool, sampled_indices)
+        self.committee_validation_loader = DataLoader(
+            sampled_dataset,
+            batch_size=self.params['test_batch_size'],
+            shuffle=False,
+        )
+        logger.info(f'Public validation sample size at epoch {epoch}: {sample_size}/{pool_size}')
+        return self.committee_validation_loader
 
     def color_print_wv(self, wv, names):
         wv_print_str= '['
@@ -504,7 +564,7 @@ class Helper:
         return updates
 
 
-    def flshield(self, target_model, updates, epoch, weight_accumulator):
+    def flshield(self, target_model, updates, epoch, weight_accumulator, committee_members=None):
         start_epoch = self.start_epoch
         if epoch < start_epoch:
             self.fedavg(target_model, updates)
@@ -595,9 +655,19 @@ class Helper:
         for name in names:
             all_validator_evaluations[name] = []
 
+        if committee_members is None:
+            validators = names
+        else:
+            validators = [member for member in committee_members if member in names]
+            if len(validators) == 0:
+                validators = names
+
+        logger.info(f'Validators for epoch {epoch}: {validators}')
+        validator_names = validators
+
         evaluations_of_clusters[-1] = {}
-        for iidx, val_idx in enumerate(names):
-            val_score_by_class, val_score_by_class_per_example, count_of_class = validation_test(self, target_model, val_idx if self.params['type'] != config.TYPE_LOAN else iidx)
+        for val_idx in validators:
+            val_score_by_class, val_score_by_class_per_example, count_of_class = validation_test(self, target_model, val_idx)
             val_score_by_class_per_example = [val_score_by_class_per_example[i] for i in range(num_of_classes)]
             all_validator_evaluations[val_idx] += val_score_by_class_per_example
             evaluations_of_clusters[-1][val_idx] = [val_score_by_class[i] for i in range(num_of_classes)]
@@ -663,13 +733,13 @@ class Helper:
                     data.add_(update_per_layer.to(data.dtype))
                     
 
-            for iidx, val_idx in enumerate(tqdm(names, disable=True)):
-                val_score_by_class, val_score_by_class_per_example, count_of_class = validation_test(self, agg_model, val_idx if self.params['type'] != config.TYPE_LOAN else iidx)
+            for val_idx in tqdm(validators, disable=True):
+                val_score_by_class, val_score_by_class_per_example, count_of_class = validation_test(self, agg_model, val_idx)
                 val_score_by_class_per_example = [val_score_by_class_per_example[i] for i in range(num_of_classes)]
 
                 val_score_by_class_per_example = [-val_score_by_class_per_example[i]+all_validator_evaluations[val_idx][i] for i in range(num_of_classes)]
-                    
-                all_validator_evaluations[val_idx]+= val_score_by_class_per_example
+
+                all_validator_evaluations[val_idx] += val_score_by_class_per_example
                 evaluations_of_clusters[idx][val_idx] = [-val_score_by_class[i]+evaluations_of_clusters[-1][val_idx][i] for i in range(num_of_classes)]
             
             # for client in cluster:
@@ -690,7 +760,7 @@ class Helper:
         validation_container = {
             'evaluations_of_clusters': evaluations_of_clusters,
             'count_of_class_for_validator': count_of_class_for_validator,
-            'names': names,
+            'names': validator_names,
             'num_of_classes': num_of_classes,
             'num_of_clusters': num_of_clusters,
             'all_validator_evaluations': all_validator_evaluations,
@@ -707,7 +777,7 @@ class Helper:
 
         before_imputation_validation_container = copy.deepcopy(validation_container)
 
-        evaluations_of_clusters, count_of_class_for_validator = impute_validation(evaluations_of_clusters, count_of_class_for_validator, names, num_of_clusters, num_of_classes, impute_method='iterative')
+        evaluations_of_clusters, count_of_class_for_validator = impute_validation(evaluations_of_clusters, count_of_class_for_validator, validator_names, num_of_clusters, num_of_classes, impute_method='iterative')
 
         # all_validator_evaluations_dict = dict()
         # for val_idx in range(len(names)):
@@ -751,7 +821,7 @@ class Helper:
         validation_container = {
             'evaluations_of_clusters': evaluations_of_clusters,
             'count_of_class_for_validator': count_of_class_for_validator,
-            'names': names,
+            'names': validator_names,
             'num_of_classes': num_of_classes,
             'num_of_clusters': num_of_clusters,
             'all_validator_evaluations': all_validator_evaluations,
@@ -1775,5 +1845,4 @@ class FoolsGold(object):
 
         # wv is the weight
         return wv,alpha
-
 
