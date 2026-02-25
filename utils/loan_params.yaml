@@ -62,6 +62,8 @@ participants_namelist: [CA, NY, TX, FL, IL, NJ, PA, OH, GA, VA, NC, MI, MD, AZ]
 # participants_namelist: [NJ, IL, PA, WA, CA, TX, CO, GA, VA, NY]
 #participants_namelist: [ME,RI,AK]
 no_models: 14
+committee_validation_sample_size: null
+committee_validation_sample_ratio: 0.2
 number_of_total_participants: 51
 is_random_namelist: true
 is_random_adversary: false

@@ -183,6 +183,8 @@ def run(params_loaded):
         #     if helper.params['is_random_adversary']==False:
         #         adversarial_name_keys=copy.deepcopy(helper.adversarial_namelist)
         logger.info(f'Server Epoch:{epoch} choose agents : {agent_name_keys}.')
+        committee_members = helper.elect_committee(epoch)
+        logger.info(f'Decentralized committee for epoch {epoch}: {committee_members}')
         epochs_submit_update_dict, num_samples_dict = train.train(helper=helper, start_epoch=epoch,
                                                                   local_model=helper.local_model,
                                                                   target_model=helper.target_model,
@@ -196,6 +198,7 @@ def run(params_loaded):
         weight_accumulator, updates = helper.accumulate_weight(weight_accumulator, epochs_submit_update_dict,
                                                                agent_name_keys, num_samples_dict)
         logger.info(f'received {len(updates)} updates')
+        helper.sample_public_validation_loader(epoch)
 
         if helper.params['attack_methods'] == config.ATTACK_IPM:
             updates = helper.ipm_attack(updates)
@@ -204,7 +207,7 @@ def run(params_loaded):
         if helper.params['aggregation_methods'] == config.AGGR_FLSHIELD:
             # helper.combined_clustering_guided_aggregation(helper.target_model, updates, epoch)
             # helper.combined_clustering_guided_aggregation_with_DP(helper.target_model, updates, epoch)
-            helper.flshield(helper.target_model, updates, epoch, weight_accumulator)
+            helper.flshield(helper.target_model, updates, epoch, weight_accumulator, committee_members=committee_members)
         elif helper.params['aggregation_methods'] == config.AGGR_AFA:
             is_updated, names, weights = helper.afa_method(helper.target_model, updates)
         elif helper.params['aggregation_methods'] == config.AGGR_FLTRUST:

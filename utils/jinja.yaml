@@ -48,6 +48,9 @@ is_random_adversary: true
 
 
 
+committee_validation_sample_size: {{ committee_validation_sample_size|default('null') }}
+committee_validation_sample_ratio: {{ committee_validation_sample_ratio|default(0.2) }}
+
 
 # aggregation_methods Allowed values are: [ 'mean', 'geom_median','flame', 'flshield', 'afa', 'foolsgold']
 aggregation_methods: {{ get_aggregation_methods(aggregation_methods) }}

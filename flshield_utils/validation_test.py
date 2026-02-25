@@ -130,7 +130,9 @@ def validation_test_fun(helper, network, given_test_loader=None, is_poisonous=Fa
 
 
 def validation_test(helper, target_model, validator_idx):
-    if helper.params['type'] == config.TYPE_LOAN:
+    if getattr(helper, 'committee_validation_loader', None) is not None:
+        val_test_loader = helper.committee_validation_loader
+    elif helper.params['type'] == config.TYPE_LOAN:
         val_test_loader = helper.allStateHelperList[validator_idx].get_testloader()
     else:
         # _, val_test_loader = helper.train_data[validator_idx]
