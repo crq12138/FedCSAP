@@ -22,6 +22,24 @@ where `X` is the aggregation method and can take values in 'mean', 'geom_median'
 
 Note: in order to run FLShield with bijective version, `--bijective_flshield` should be added to the command line.
 
+Committee election behavior (for `flshield`/`fedcsap`):
+- `no_models` controls how many client updates are trained/collected per round.
+- `committee_size` controls how many validators are elected as committee members.
+- If `committee_size` is not set, the code defaults it to `no_models`.
+
+So if you run with `no_models=25` and do not pass `--committee_size`, the elected committee will also have 25 members.
+To get 25 training clients with a 5-member committee, pass `--committee_size=5`.
+
+If you want **25 total participants** in the whole federation and **5 committee members**, run for example:
+```
+python main.py --type=cifar --aggregation_methods=flshield --attack_methods=targeted_label_flip --mal_pcnt=0.2 --resumed_model=false --epochs=210 --bijective_flshield --number_of_total_participants=25 --committee_size=5 --no_models=20
+```
+In this setup, 5 selected participants are committee validators and up to 20 non-committee clients are trained each round.
+
+Do participants change each round?
+- The global participant pool (IDs) is fixed for a run.
+- Committee members and training clients are re-sampled each epoch, so the active set usually changes round by round.
+
 Different scenarios require different parameters which is listed in `utils/jinja.yaml`
 Some of them are changable from the command line, for example adding `--noniid=one_class_expert` will run the experiment with one class expert data distribution.
 
