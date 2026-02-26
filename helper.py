@@ -727,23 +727,24 @@ class Helper:
             clusters_agg.append(clstr)
 
 
-        print(f'Validating all clients at epoch {epoch}')
+        print(f'Validating selected validators at epoch {epoch} (validators will evaluate submitted updates)')
 
         all_validator_evaluations = {}
         evaluations_of_clusters = {}
         count_of_class_for_validator = {}
 
-        for name in names:
-            all_validator_evaluations[name] = []
 
         if committee_members is None:
             validators = names
         else:
-            validators = [member for member in committee_members if member in names]
+            validators = [member for member in committee_members if member in self.participants_list]
             if len(validators) == 0:
                 validators = names
 
-        logger.info(f'Validators for epoch {epoch}: {validators}')
+        for val_idx in validators:
+            all_validator_evaluations[val_idx] = []
+
+        logger.info(f'Validators for epoch {epoch} ({len(validators)} selected): {validators}')
         validator_names = validators
 
         evaluations_of_clusters[-1] = {}

@@ -176,7 +176,7 @@ edge_split: {{ edge_split|default(0.1) }}
 {% endif %}
 
 {% set mal_participant_frac = mal_pcnt | float if mal_pcnt is defined else 0.4 %}
-{% set number_of_adversary = mal_participant_frac * number_of_total_participants %}
+{% set number_of_adversary = mal_participant_frac * (number_of_total_participants | int) %}
 number_of_adversary_{{ get_attack_methods(attack_methods) }}: {{ number_of_adversary|round|int if number_of_adversary % 1 > 0 else number_of_adversary|int }}
 {% if get_type(type) == 'loan' %}
 adversary_list: [FL, IL, NJ, PA, OH, GA, VA, NC, MI, MD, AZ, CT, MO, TN]

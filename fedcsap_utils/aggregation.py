@@ -63,7 +63,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
     if committee_members is None:
         validators = names
     else:
-        validators = [member for member in committee_members if member in names]
+        validators = [member for member in committee_members if member in helper.participants_list]
         if len(validators) == 0:
             validators = names
 
