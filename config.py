@@ -14,6 +14,7 @@ AGGR_GEO_MED = 'geom_median'
 AGGR_FLAME='flame'
 AGGR_FLTRUST = 'fltrust'
 AGGR_FLSHIELD = 'flshield'
+AGGR_FEDCSAP = 'fedcsap'
 AGGR_AFA = 'afa'
 
 ATTACK_DBA = 'dba'
