@@ -52,7 +52,7 @@ committee_validation_sample_size: {{ committee_validation_sample_size|default('n
 committee_validation_sample_ratio: {{ committee_validation_sample_ratio|default(0.2) }}
 
 
-# aggregation_methods Allowed values are: [ 'mean', 'geom_median','flame', 'flshield', 'afa', 'foolsgold']
+# aggregation_methods Allowed values are: [ 'mean', 'geom_median','flame', 'flshield', 'fedcsap', 'afa', 'foolsgold']
 aggregation_methods: {{ get_aggregation_methods(aggregation_methods) }}
 
 {% if get_aggregation_methods(aggregation_methods) == 'mean' %}
@@ -88,6 +88,13 @@ validation_metric: {{ validation_metric|default('LIPC') }}
 no_ensemble: false
 {% endif %}
 
+
+{% if get_aggregation_methods(aggregation_methods) == 'fedcsap' %}
+fedcsap_bottom_q: {{ fedcsap_bottom_q|default(0.2) }}
+validation_metric_options:
+  - f1
+validation_metric: {{ validation_metric|default('f1') }}
+{% endif %}
 
 
 is_poison: {{ is_poison|default('true') }}

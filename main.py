@@ -208,6 +208,8 @@ def run(params_loaded):
             # helper.combined_clustering_guided_aggregation(helper.target_model, updates, epoch)
             # helper.combined_clustering_guided_aggregation_with_DP(helper.target_model, updates, epoch)
             helper.flshield(helper.target_model, updates, epoch, weight_accumulator, committee_members=committee_members)
+        elif helper.params['aggregation_methods'] == config.AGGR_FEDCSAP:
+            helper.fedcsap(helper.target_model, updates, epoch, committee_members=committee_members)
         elif helper.params['aggregation_methods'] == config.AGGR_AFA:
             is_updated, names, weights = helper.afa_method(helper.target_model, updates)
         elif helper.params['aggregation_methods'] == config.AGGR_FLTRUST:

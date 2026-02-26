@@ -30,6 +30,7 @@ from flshield_utils.validation_processing import ValidationProcessor
 from flshield_utils.cluster_grads import cluster_grads as cluster_function
 from flshield_utils.validation_test import validation_test
 from flshield_utils.impute_validation import impute_validation
+from fedcsap_utils.aggregation import run_fedcsap
 
 from torch.utils.data import SubsetRandomSampler
 from torch.utils.data import ConcatDataset, DataLoader, Subset
@@ -59,6 +60,7 @@ from sklearn.ensemble import IsolationForest
 from matplotlib import pyplot as plt
 
 import pickle
+import hashlib
 
 
 class Helper:
@@ -135,13 +137,92 @@ class Helper:
         self.public_validation_pool = None
         self.committee_validation_loader = None
 
+        self.participant_positive_behavior = defaultdict(lambda: 0)
+        self.participant_malicious_behavior = defaultdict(lambda: 0)
+        self.reputation_prior_positive = 1.0
+        self.reputation_prior_malicious = 1.0
+
+    def _ensure_reputation_state(self):
+        if not hasattr(self, 'participants_list') or self.participants_list is None:
+            return
+        for participant in self.participants_list:
+            if participant not in self.participant_positive_behavior:
+                self.participant_positive_behavior[participant] = 0
+            if participant not in self.participant_malicious_behavior:
+                self.participant_malicious_behavior[participant] = 0
+
+    def get_participant_reputation(self, participant):
+        self._ensure_reputation_state()
+        positive = self.participant_positive_behavior[participant]
+        malicious = self.participant_malicious_behavior[participant]
+        alpha = positive + self.reputation_prior_positive
+        beta = malicious + self.reputation_prior_malicious
+        return float(alpha / (alpha + beta))
+
+    def update_participant_reputation(self, low_cluster_participants, round_participants):
+        self._ensure_reputation_state()
+        low_cluster_set = set(low_cluster_participants)
+        for participant in round_participants:
+            if participant in low_cluster_set:
+                self.participant_malicious_behavior[participant] += 1
+            else:
+                self.participant_positive_behavior[participant] += 1
+
+    def _get_global_model_hash(self):
+        hasher = hashlib.sha256()
+        for name, tensor in sorted(self.target_model.state_dict().items(), key=lambda x: x[0]):
+            hasher.update(name.encode('utf-8'))
+            hasher.update(str(tensor.shape).encode('utf-8'))
+            hasher.update(str(tensor.dtype).encode('utf-8'))
+            hasher.update(tensor.detach().cpu().numpy().tobytes())
+        return hasher.hexdigest()
+
     def elect_committee(self, epoch):
         committee_size = self.params['committee_size']
         if committee_size is None:
             committee_size = self.params['no_models']
         committee_size = min(int(committee_size), len(self.participants_list))
-        committee_rng = random.Random(314159 + epoch)
-        self.current_committee = committee_rng.sample(self.participants_list, committee_size)
+
+        self._ensure_reputation_state()
+        reputations = [self.get_participant_reputation(p) for p in self.participants_list]
+        min_weight = 1e-6
+        weights = [max(r, min_weight) for r in reputations]
+        total_weight = float(np.sum(weights))
+
+        if total_weight <= 0 or committee_size == 0:
+            self.current_committee = []
+            return self.current_committee
+
+        cumulative_weights = np.cumsum(weights)
+        model_seed = self._get_global_model_hash()
+
+        selected = []
+        selected_set = set()
+        nonce = 0
+        max_iterations = max(1000, committee_size * 200)
+
+        while len(selected) < committee_size and nonce < max_iterations:
+            hashed = hashlib.sha256(f'{model_seed}:{epoch}:{nonce}'.encode('utf-8')).hexdigest()
+            random_ratio = int(hashed, 16) / float(1 << 256)
+            ring_point = random_ratio * total_weight
+            candidate_idx = int(np.searchsorted(cumulative_weights, ring_point, side='right'))
+            candidate_idx = min(candidate_idx, len(self.participants_list) - 1)
+            candidate = self.participants_list[candidate_idx]
+            if candidate not in selected_set:
+                selected_set.add(candidate)
+                selected.append(candidate)
+            nonce += 1
+
+        if len(selected) < committee_size:
+            remaining = [p for p in self.participants_list if p not in selected_set]
+            remaining = sorted(remaining, key=lambda p: self.get_participant_reputation(p), reverse=True)
+            selected.extend(remaining[:committee_size-len(selected)])
+
+        self.current_committee = selected
+        logger.info(
+            f'Reputation-guided committee election at epoch {epoch}: ' +
+            f"{[(p, round(self.get_participant_reputation(p), 4)) for p in self.current_committee]}"
+        )
         return self.current_committee
 
     def sample_public_validation_loader(self, epoch):
@@ -910,6 +991,9 @@ class Helper:
                 # logger.info(f'{var_name}: {local_vars[var_name]}')
                 utils.csv_record.epoch_reports[epoch][var_name] = utils.csv_record.convert_float32_to_float(local_vars[var_name])
         return
+
+    def fedcsap(self, target_model, updates, epoch, committee_members=None):
+        return run_fedcsap(self, target_model, updates, epoch, committee_members=committee_members)
 
     
 
@@ -1845,4 +1929,3 @@ class FoolsGold(object):
 
         # wv is the weight
         return wv,alpha
-
