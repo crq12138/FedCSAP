@@ -38,10 +38,11 @@ no_models: {{ no_models|default(25) }}
 no_models: {{ no_models|default(100) }}
 {% endif %}
 {% if get_type(type) == 'loan' %}
-{% set number_of_total_participants = 51 %}
+{% set default_number_of_total_participants = 51 %}
 {% else %}
-{% set number_of_total_participants = 100 %}
+{% set default_number_of_total_participants = 100 %}
 {% endif %}
+{% set number_of_total_participants = number_of_total_participants|default(default_number_of_total_participants) %}
 number_of_total_participants: {{ number_of_total_participants }}
 is_random_namelist: true
 is_random_adversary: true
