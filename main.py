@@ -147,7 +147,9 @@ def run(params_loaded):
         start_time = time.time()
         t = time.time()
 
-        agent_name_keys = helper.participants_list
+        committee_members = helper.elect_committee(epoch)
+        committee_set = set(committee_members)
+        agent_name_keys = []
         adversarial_name_keys = []
         random.seed(42+epoch)
         # if helper.params['is_random_adversary'] or helper.params['random_adversary_for_label_flip']:  # random choose , maybe don't have advasarial
@@ -157,6 +159,9 @@ def run(params_loaded):
         #             adversarial_name_keys.append(_name_keys)
         # else:  # must have advasarial if this epoch is in their poison epoch
         ongoing_epochs = list(range(epoch, epoch + helper.params['aggr_epoch_interval']))
+        available_adversaries = [a for a in helper.adversarial_namelist if a not in committee_set]
+        available_benign = [b for b in helper.benign_namelist if b not in committee_set]
+
         adv_num = int(len(helper.adversarial_namelist) * helper.params['no_models'] / len(helper.participants_list))
         # for idx in range(0, len(helper.adversarial_namelist)):
         # for iidx in range(0, adv_num):
@@ -165,25 +170,40 @@ def run(params_loaded):
         #         if ongoing_epoch in helper.poison_epochs_by_adversary[idx]:
         #             if helper.adversarial_namelist[idx] not in adversarial_name_keys:
         #                 adversarial_name_keys.append(helper.adversarial_namelist[idx])
-        adversarial_name_keys = random.sample(helper.adversarial_namelist, adv_num)
+        adv_num = min(adv_num, len(available_adversaries))
+        adversarial_name_keys = random.sample(available_adversaries, adv_num)
 
         # nonattacker=[]
         # for adv in helper.adversarial_namelist:
         #     if adv not in adversarial_name_keys:
         #         nonattacker.append(copy.deepcopy(adv))
         if helper.params['aggregation_methods'] == config.AGGR_FLTRUST:
-            benign_num = helper.params['no_models'] - len(adversarial_name_keys) - 1
-            random_agent_name_keys = random.sample(helper.benign_namelist[:-1], benign_num)
-            agent_name_keys = adversarial_name_keys + random_agent_name_keys + [helper.benign_namelist[-1]]
+            trusted_node = helper.benign_namelist[-1]
+            if trusted_node in committee_set:
+                trusted_node = None
+
+            benign_num = helper.params['no_models'] - len(adversarial_name_keys) - (1 if trusted_node is not None else 0)
+            available_fltrust_benign = [b for b in helper.benign_namelist[:-1] if b not in committee_set]
+            benign_num = max(0, min(benign_num, len(available_fltrust_benign)))
+            random_agent_name_keys = random.sample(available_fltrust_benign, benign_num)
+            agent_name_keys = adversarial_name_keys + random_agent_name_keys
+            if trusted_node is not None:
+                agent_name_keys.append(trusted_node)
         else:
             benign_num = helper.params['no_models'] - len(adversarial_name_keys)
-            random_agent_name_keys = random.sample(helper.benign_namelist, benign_num)
+            benign_num = max(0, min(benign_num, len(available_benign)))
+            random_agent_name_keys = random.sample(available_benign, benign_num)
             agent_name_keys = adversarial_name_keys + random_agent_name_keys
+
+        if len(agent_name_keys) < helper.params['no_models']:
+            remaining_candidates = [p for p in helper.participants_list if p not in committee_set and p not in set(agent_name_keys)]
+            refill_num = min(helper.params['no_models'] - len(agent_name_keys), len(remaining_candidates))
+            if refill_num > 0:
+                agent_name_keys.extend(random.sample(remaining_candidates, refill_num))
         # else:
         #     if helper.params['is_random_adversary']==False:
         #         adversarial_name_keys=copy.deepcopy(helper.adversarial_namelist)
-        logger.info(f'Server Epoch:{epoch} choose agents : {agent_name_keys}.')
-        committee_members = helper.elect_committee(epoch)
+        logger.info(f'Server Epoch:{epoch} choose non-committee agents : {agent_name_keys}.')
         logger.info(f'Decentralized committee for epoch {epoch}: {committee_members}')
         epochs_submit_update_dict, num_samples_dict = train.train(helper=helper, start_epoch=epoch,
                                                                   local_model=helper.local_model,
