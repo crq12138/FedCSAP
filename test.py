@@ -58,6 +58,69 @@ def Mytest(helper, epoch,
     model.train()
     return (total_l, acc, correct, dataset_size)
 
+
+def Mytest_global_metrics(helper, model):
+    model.eval()
+    num_classes = config.num_of_classes_dict[helper.params['type']]
+
+    tp = np.zeros(num_classes, dtype=np.float64)
+    fp = np.zeros(num_classes, dtype=np.float64)
+    fn = np.zeros(num_classes, dtype=np.float64)
+
+    correct = 0
+    dataset_size = 0
+
+    if helper.params['type'] == config.TYPE_LOAN:
+        data_iterators = [state_helper.get_testloader() for state_helper in helper.allStateHelperList]
+        for state_helper, data_iterator in zip(helper.allStateHelperList, data_iterators):
+            for _, batch in enumerate(data_iterator):
+                data, targets = state_helper.get_batch(data_iterator, batch, evaluation=True)
+                output = model(data)
+                pred = output.data.max(1)[1]
+
+                dataset_size += len(data)
+                correct += pred.eq(targets.data.view_as(pred)).cpu().sum().item()
+
+                pred_np = pred.detach().cpu().numpy().reshape(-1)
+                targets_np = targets.detach().cpu().numpy().reshape(-1)
+                for class_id in range(num_classes):
+                    tp[class_id] += np.sum((pred_np == class_id) & (targets_np == class_id))
+                    fp[class_id] += np.sum((pred_np == class_id) & (targets_np != class_id))
+                    fn[class_id] += np.sum((pred_np != class_id) & (targets_np == class_id))
+    else:
+        data_iterator = helper.test_data
+        for _, batch in enumerate(data_iterator):
+            data, targets = helper.get_batch(data_iterator, batch, evaluation=True)
+            output = model(data)
+            pred = output.data.max(1)[1]
+
+            dataset_size += len(data)
+            correct += pred.eq(targets.data.view_as(pred)).cpu().sum().item()
+
+            pred_np = pred.detach().cpu().numpy().reshape(-1)
+            targets_np = targets.detach().cpu().numpy().reshape(-1)
+            for class_id in range(num_classes):
+                tp[class_id] += np.sum((pred_np == class_id) & (targets_np == class_id))
+                fp[class_id] += np.sum((pred_np == class_id) & (targets_np != class_id))
+                fn[class_id] += np.sum((pred_np != class_id) & (targets_np == class_id))
+
+    f1_values = []
+    for class_id in range(num_classes):
+        precision_den = tp[class_id] + fp[class_id]
+        recall_den = tp[class_id] + fn[class_id]
+        precision = tp[class_id] / precision_den if precision_den > 0 else 0.0
+        recall = tp[class_id] / recall_den if recall_den > 0 else 0.0
+        if precision + recall > 0:
+            f1_values.append(100.0 * (2 * precision * recall) / (precision + recall))
+        else:
+            f1_values.append(0.0)
+
+    global_acc = 100.0 * (float(correct) / float(dataset_size)) if dataset_size != 0 else 0.0
+    global_macro_f1 = float(np.mean(f1_values)) if len(f1_values) > 0 else 0.0
+
+    model.train()
+    return global_acc, global_macro_f1
+
 def Mytest_poison_label_flip(helper, epoch,
            model, is_poison=False, visualize=True, agent_name_key="", get_recall=False):
 	# model.eval()
