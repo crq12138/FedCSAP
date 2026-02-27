@@ -18,6 +18,7 @@ from loan_helper import LoanHelper
 from image_helper import ImageHelper
 from utils.utils import dict_html
 import utils.csv_record as csv_record
+from utils.experiment_logger import ExperimentLogger
 import yaml
 import time
 import visdom
@@ -142,6 +143,11 @@ def run(params_loaded):
 
     # dictionary object to store test results and pickle it
     helper.result_dict = defaultdict(lambda: [])
+    helper.experiment_logger = ExperimentLogger(
+        folder_path=helper.folder_path,
+        total_epochs=helper.params['epochs'],
+        aggr_epoch_interval=helper.params['aggr_epoch_interval'],
+    )
 
     for epoch in range(helper.start_epoch, helper.params['epochs'] + 1, helper.params['aggr_epoch_interval']):
         start_time = time.time()
@@ -149,6 +155,12 @@ def run(params_loaded):
 
         committee_members = helper.elect_committee(epoch)
         committee_set = set(committee_members)
+        committee_malicious_count = len([m for m in committee_members if m in helper.adversarial_namelist])
+        helper.experiment_logger.log_fedcsap_round_metrics(
+            epoch=epoch,
+            committee_size=len(committee_members),
+            committee_malicious_count=committee_malicious_count,
+        )
         agent_name_keys = []
         adversarial_name_keys = []
         random.seed(42+epoch)
@@ -262,7 +274,14 @@ def run(params_loaded):
                                                                        model=helper.target_model, is_poison=False,
                                                                        visualize=False, agent_name_key="global")
         csv_record.test_result.append(["global", temp_global_epoch, epoch_loss, epoch_acc, epoch_corret, epoch_total])
+        global_acc, global_macro_f1 = test.Mytest_global_metrics(helper=helper, model=helper.target_model)
+        helper.experiment_logger.log_global_metrics(
+            epoch=temp_global_epoch,
+            global_acc=global_acc,
+            global_macro_f1=global_macro_f1,
+        )
         csv_record.epoch_reports[epoch]["epoch_loss"], csv_record.epoch_reports[epoch]["epoch_acc"] = epoch_loss, epoch_acc
+        csv_record.epoch_reports[epoch]["global_macro_f1"] = global_macro_f1
         helper.result_dict['mainacc'].append(epoch_acc)
         if len(csv_record.scale_temp_one_row)>0:
             csv_record.scale_temp_one_row.append(round(epoch_acc, 4))
