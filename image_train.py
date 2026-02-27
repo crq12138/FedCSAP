@@ -35,7 +35,15 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
             current_number_of_adversaries+=1
 
     helper.local_models = {}
-    for model_id in tqdm(range(helper.params['no_models']), disable=False):
+    current_round_models = len(agent_name_keys)
+    if current_round_models < helper.params['no_models']:
+        main.logger.warning(
+            'Requested no_models=%s but only %s non-committee participants are available this round.',
+            helper.params['no_models'],
+            current_round_models,
+        )
+
+    for model_id in tqdm(range(current_round_models), disable=False):
         if psuedo_train_mode:
             target_model = base_model[helper.validation_assignments[model_id]]
 

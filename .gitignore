@@ -30,3 +30,4 @@ latexmaker/
 saved_results/*
 plot_utils.py
 plot_utils_backup.py
+runs/

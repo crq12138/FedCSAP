@@ -193,7 +193,7 @@ noniid: true
 noniid: false
 {% if get_noniid(noniid) == 'sampling_dirichlet' %}
 sampling_dirichlet: true
-dirichlet_alpha: 0.9
+dirichlet_alpha: 0.5
 {% endif %}
 {% endif %}
 
