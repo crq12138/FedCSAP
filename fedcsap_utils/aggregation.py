@@ -79,6 +79,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         baseline_profile[val_name] = [float(val_score_by_class[i]) for i in range(num_of_classes)]
 
     representative_scores = []
+    per_client_delta_f1 = {}
     for idx, rep_name in enumerate(names):
         rep_model = helper.new_model()
         rep_model.copy_params(helper.target_model.state_dict())
@@ -92,6 +93,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
                 layer_data.add_(update_per_layer.to(layer_data.dtype))
 
         validator_scores = []
+        validator_delta_by_class = []
         for val_name in validators:
             rep_score_by_class, _, _ = validation_test(helper, rep_model, val_name)
             delta_by_class = [
@@ -100,8 +102,14 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
             ]
             scalar_score = _compute_cvar_bottom_q_mean(delta_by_class, bottom_q=bottom_q)
             validator_scores.append(scalar_score)
+            validator_delta_by_class.append(delta_by_class)
 
         representative_scores.append(float(np.mean(validator_scores)))
+        if len(validator_delta_by_class) > 0:
+            mean_delta = np.mean(np.array(validator_delta_by_class, dtype=np.float32), axis=0)
+            per_client_delta_f1[rep_name] = [float(v) for v in mean_delta.tolist()]
+        else:
+            per_client_delta_f1[rep_name] = [0.0 for _ in range(num_of_classes)]
 
     # 1D kmeans with min/max anchors
     high_cluster_flags = _one_dim_kmeans_split(representative_scores)
@@ -136,6 +144,29 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         low_cluster_clients,
         time.time() - start,
     )
+
+
+    if hasattr(helper, 'experiment_logger') and helper.experiment_logger is not None:
+        selected_set = set(selected_clients)
+        for i, client_name in enumerate(names):
+            is_selected = client_name in selected_set
+            trust_instant = 1 if is_selected else 0
+            helper.experiment_logger.log_fedcsap_client_metrics(
+                epoch=epoch,
+                client_id=client_name,
+                is_malicious=client_name in helper.adversarial_namelist,
+                cvar_score=float(representative_scores[i]),
+                cluster_label=int(high_cluster_flags[i]),
+                is_selected=is_selected,
+                reputation=helper.get_participant_reputation(client_name),
+                trust_instant=trust_instant,
+            )
+            if helper.experiment_logger.should_log_class_delta_f1(epoch):
+                helper.experiment_logger.log_fedcsap_class_delta_f1(
+                    epoch=epoch,
+                    client_id=client_name,
+                    delta_f1_vec=per_client_delta_f1.get(client_name, []),
+                )
 
     if hasattr(helper, 'result_dict') and helper.result_dict is not None:
         helper.result_dict['fedcsap_rep_scores'].append(representative_scores)
