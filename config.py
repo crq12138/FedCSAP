@@ -33,6 +33,7 @@ TYPE_CELEBA='celebA'
 TYPE_EMNIST='emnist'
 TYPE_EMNIST_LETTERS='emnist_letters'
 TYPE_FMNIST='fmnist'
+TYPE_PATHMNIST='pathmnist'
 TYPE_TINYIMAGENET='tiny-imagenet-200'
 
 num_of_classes_dict = {
@@ -41,6 +42,7 @@ num_of_classes_dict = {
     TYPE_EMNIST : 10,
     TYPE_EMNIST_LETTERS : 26,
     TYPE_FMNIST : 10,
+    TYPE_PATHMNIST : 9,
     TYPE_LOAN : 9
 }
 
@@ -71,6 +73,11 @@ target_class_dict = {
         'hard': [5, 3]
     },
     TYPE_LOAN : {
+        'easy': [1, 2],
+        'medium': [1, 0],
+        'hard': [1, 0]
+    },
+    TYPE_PATHMNIST : {
         'easy': [1, 2],
         'medium': [1, 0],
         'hard': [1, 0]
