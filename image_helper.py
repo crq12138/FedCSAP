@@ -557,6 +557,10 @@ class ImageHelper(Helper):
             dataPath_emnist = '/dartfs-hpc/rc/home/9/f0059f9/OOD_Federated_Learning/data'
             dataPath_emnist = './data'
             num_labels = 10
+            if self.params['type'] == config.TYPE_PATHMNIST:
+                # PathMNIST has 9 classes (0-8). Keep label-count-dependent
+                # statistics/LSR computation aligned with the real dataset.
+                num_labels = 9
             if self.params['type'] == config.TYPE_CIFAR:
                 ### data load
                 transform_train = transforms.Compose([

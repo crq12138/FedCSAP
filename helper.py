@@ -99,14 +99,24 @@ class Helper:
             # self.folder_path = f'saved_models/{current_time}_{hash_value}'
             self.folder_path = f'saved_models/{hash_value}'
 
-        # if folder exists and a result_dict.pkl exists, then abort
+        run_log_path = self.params.get('run_log_path')
         if os.path.exists(self.folder_path):
             if os.path.exists(f'{self.folder_path}/result_dict.pkl'):
                 print(f'{self.folder_path} already exists, aborting')
                 exit(0)
             else:
-                shutil.rmtree(self.folder_path)
-                os.makedirs(self.folder_path)
+                # Keep the per-run log file created early in main.py.
+                # The previous behavior removed the entire folder and deleted
+                # runs/run_xxx/run_xxx.log before training actually started.
+                keep_name = os.path.basename(run_log_path) if run_log_path else None
+                for item in os.listdir(self.folder_path):
+                    if keep_name is not None and item == keep_name:
+                        continue
+                    item_path = os.path.join(self.folder_path, item)
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    else:
+                        os.remove(item_path)
         else:
             os.makedirs(self.folder_path)
 
@@ -119,7 +129,8 @@ class Helper:
         # else:
         #     shutil.rmtree(self.folder_path)
         #     os.makedirs(self.folder_path)
-        logger.addHandler(logging.FileHandler(filename=f'{self.folder_path}/log.txt'))
+        log_file_path = run_log_path if run_log_path else f'{self.folder_path}/log.txt'
+        logger.addHandler(logging.FileHandler(filename=log_file_path))
         logger.addHandler(logging.StreamHandler())
         logger.setLevel(logging.DEBUG)
 
