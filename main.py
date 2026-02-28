@@ -84,6 +84,17 @@ def get_param_for_context(context=None):
     return params
 
 
+
+
+def configure_run_logging(run_name):
+    run_folder = os.path.join('runs', run_name)
+    os.makedirs(run_folder, exist_ok=True)
+    run_log_path = os.path.join(run_folder, f'{run_name}.log')
+    run_log = open(run_log_path, 'a', buffering=1)
+    sys.stdout = run_log
+    sys.stderr = run_log
+    return run_folder, run_log_path
+
 def run(params_loaded):
     params_loaded = defaultdict(lambda: None, params_loaded)
     print(f'gpu requested: {params_loaded["gpu"]}')
@@ -356,27 +367,28 @@ if __name__ == '__main__':
     args, unknown = parser.parse_known_args()
     print(f'args: {args}')
     print(f'unknown: {unknown}')
-    if len(unknown) == 0:
+    run_name = None
+    context_args = {}
+    for arg in unknown:
+        if not arg.startswith(("-", "--")):
+            continue
+
+        stripped_arg = arg.lstrip("-")
+        if "=" in stripped_arg:
+            key, value = stripped_arg.split("=", 1)
+            context_args[key] = value
+        else:
+            if stripped_arg.startswith('run_'):
+                run_name = stripped_arg
+            else:
+                context_args[stripped_arg] = True
+
+    if len(context_args) == 0:
         with open(f'./{args.params}', 'r') as f:
             # params_loaded = yaml.load(f)
             params_loaded = yaml.safe_load(f)
     else:
-        # parse unknown arguments
-        for arg in unknown:
-            if arg.startswith(("-", "--")):
-                if "=" in arg:
-                    k, v = arg.split("=")
-                    setattr(args, k.strip("-"), v)
-                else:
-                    setattr(args, arg.strip("-"), True)
-        print(f'args: {args}')
-
-        # convert args to dictionary
-        args = vars(args)
-        del args['params']
-        print(f'args: {args}')
-
-        context = get_context(**args)
+        context = get_context(**context_args)
         print(f'context: {context}')
 
         params_loaded = get_param_for_context(context)
@@ -385,6 +397,12 @@ if __name__ == '__main__':
             if k not in params_loaded:
                 params_loaded[k] = v
 
+    if run_name is not None:
+        params_loaded['run_name'] = run_name
+        run_folder, run_log_path = configure_run_logging(run_name)
+        params_loaded['run_log_path'] = run_log_path
+        print(f'Run folder: {run_folder}')
+        print(f'Run log: {run_log_path}')
 
     logger.info(f'starting training')
     run(params_loaded)
