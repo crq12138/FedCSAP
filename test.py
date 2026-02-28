@@ -27,6 +27,7 @@ def Mytest(helper, epoch,
     elif helper.params['type'] == config.TYPE_CIFAR \
             or helper.params['type'] == config.TYPE_MNIST \
             or helper.params['type'] == config.TYPE_FMNIST \
+            or helper.params['type'] == config.TYPE_PATHMNIST \
             or helper.params['type'] == config.TYPE_EMNIST \
             or helper.params['type'] == config.TYPE_EMNIST_LETTERS \
             or helper.params['type'] == config.TYPE_TINYIMAGENET\
@@ -172,6 +173,7 @@ def Mytest_poison_label_flip(helper, epoch,
     elif helper.params['type'] == config.TYPE_CIFAR \
             or helper.params['type'] == config.TYPE_MNIST \
             or helper.params['type'] == config.TYPE_FMNIST \
+            or helper.params['type'] == config.TYPE_PATHMNIST \
             or helper.params['type'] == config.TYPE_EMNIST \
             or helper.params['type'] == config.TYPE_EMNIST_LETTERS \
             or helper.params['type'] == config.TYPE_CELEBA \
@@ -246,6 +248,7 @@ def Mytest_poison(helper, epoch,
     elif helper.params['type'] == config.TYPE_CIFAR \
             or helper.params['type'] == config.TYPE_MNIST \
             or helper.params['type'] == config.TYPE_FMNIST \
+            or helper.params['type'] == config.TYPE_PATHMNIST \
             or helper.params['type'] == config.TYPE_EMNIST \
             or helper.params['type'] == config.TYPE_EMNIST_LETTERS \
             or helper.params['type'] == config.TYPE_TINYIMAGENET\
@@ -317,6 +320,7 @@ def Mytest_poison_trigger(helper, model, adver_trigger_index):
     elif helper.params['type'] == config.TYPE_CIFAR \
             or helper.params['type'] == config.TYPE_MNIST \
             or helper.params['type'] == config.TYPE_FMNIST \
+            or helper.params['type'] == config.TYPE_PATHMNIST \
             or helper.params['type'] == config.TYPE_EMNIST \
             or helper.params['type'] == config.TYPE_EMNIST_LETTERS \
             or helper.params['type'] == config.TYPE_TINYIMAGENET\
@@ -379,6 +383,7 @@ def Mytest_poison_agent_trigger(helper, model, agent_name_key):
     elif helper.params['type'] == config.TYPE_CIFAR \
             or helper.params['type'] == config.TYPE_MNIST \
             or helper.params['type'] == config.TYPE_FMNIST \
+            or helper.params['type'] == config.TYPE_PATHMNIST \
             or helper.params['type'] == config.TYPE_EMNIST \
             or helper.params['type'] == config.TYPE_EMNIST_LETTERS \
             or helper.params['type'] == config.TYPE_TINYIMAGENET\

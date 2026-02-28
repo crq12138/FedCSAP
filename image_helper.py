@@ -11,6 +11,11 @@ from helper import Helper
 import random
 import logging
 from torchvision import datasets, transforms
+
+try:
+    import medmnist
+except ImportError:
+    medmnist = None
 import numpy as np
 
 from models.resnet_cifar import ResNet18
@@ -61,7 +66,7 @@ class ImageHelper(Helper):
             target_model = ResNet18(name='Target',
                                    created_time=self.params['current_time'])
 
-        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_EMNIST]:
+        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_PATHMNIST, config.TYPE_EMNIST]:
             local_model = MnistNet(name='Local',
                                    created_time=self.params['current_time'])
             target_model = MnistNet(name='Target',
@@ -110,7 +115,7 @@ class ImageHelper(Helper):
             new_model = ResNet18(name='Dummy',
                                    created_time=self.params['current_time'])
 
-        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_EMNIST]:
+        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_PATHMNIST, config.TYPE_EMNIST]:
             new_model = MnistNet(name='Dummy',
                                     created_time=self.params['current_time'])
 
@@ -604,6 +609,30 @@ class ImageHelper(Helper):
                         transforms.ToTensor(),
                         # transforms.Normalize((0.1307,), (0.3081,))
                     ]))
+
+            elif self.params['type'] == config.TYPE_PATHMNIST:
+                if medmnist is None:
+                    raise ImportError('PathMNIST requires medmnist. Please install medmnist in the environment.')
+
+                target_transform = lambda y: int(np.array(y).reshape(-1)[0])
+                self.train_dataset = medmnist.PathMNIST(
+                    root='./data',
+                    split='train',
+                    download=True,
+                    transform=transforms.Compose([
+                        transforms.ToTensor(),
+                    ]),
+                    target_transform=target_transform,
+                )
+                self.test_dataset = medmnist.PathMNIST(
+                    root='./data',
+                    split='test',
+                    download=True,
+                    transform=transforms.Compose([
+                        transforms.ToTensor(),
+                    ]),
+                    target_transform=target_transform,
+                )
             elif self.params['type'] == config.TYPE_EMNIST:
                 self.train_dataset = datasets.EMNIST(dataPath_emnist, split='digits', train=True, download=True,
                                 transform=transforms.Compose([
@@ -1068,7 +1097,7 @@ class ImageHelper(Helper):
                 image[2][pos[0]][pos[1]] = 1
 
 
-        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_EMNIST, config.TYPE_EMNIST_LETTERS]:
+        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_PATHMNIST, config.TYPE_EMNIST, config.TYPE_EMNIST_LETTERS]:
 
             for i in range(0, len(poison_patterns)):
                 pos = poison_patterns[i]

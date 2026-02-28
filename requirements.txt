@@ -18,3 +18,4 @@ colorama
 opacus
 pytorch_lightning
 scikit_learn
+medmnist
