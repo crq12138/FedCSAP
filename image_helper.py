@@ -66,11 +66,20 @@ class ImageHelper(Helper):
             target_model = ResNet18(name='Target',
                                    created_time=self.params['current_time'])
 
-        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_PATHMNIST, config.TYPE_EMNIST]:
+        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_EMNIST]:
             local_model = MnistNet(name='Local',
                                    created_time=self.params['current_time'])
             target_model = MnistNet(name='Target',
                                     created_time=self.params['current_time'])
+        elif self.params['type'] == config.TYPE_PATHMNIST:
+            local_model = MnistNet(name='Local',
+                                   created_time=self.params['current_time'],
+                                   in_channels=3,
+                                   num_classes=9)
+            target_model = MnistNet(name='Target',
+                                    created_time=self.params['current_time'],
+                                    in_channels=3,
+                                    num_classes=9)
         elif self.params['type']==config.TYPE_EMNIST_LETTERS:
             local_model = MnistNet_Letters(name='Local',
                                    created_time=self.params['current_time'])
@@ -115,9 +124,15 @@ class ImageHelper(Helper):
             new_model = ResNet18(name='Dummy',
                                    created_time=self.params['current_time'])
 
-        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_PATHMNIST, config.TYPE_EMNIST]:
+        elif self.params['type'] in [config.TYPE_MNIST, config.TYPE_FMNIST, config.TYPE_EMNIST]:
             new_model = MnistNet(name='Dummy',
                                     created_time=self.params['current_time'])
+
+        elif self.params['type'] == config.TYPE_PATHMNIST:
+            new_model = MnistNet(name='Dummy',
+                                    created_time=self.params['current_time'],
+                                    in_channels=3,
+                                    num_classes=9)
 
         elif self.params['type']==config.TYPE_EMNIST_LETTERS:
             new_model = MnistNet_Letters(name='Dummy',
