@@ -14,13 +14,13 @@ class MnistNet(SimpleNet):
     #     self.fc2 = nn.Linear(500, 10)
     #     # self.fc2 = nn.Linear(28*28, 10)
 
-    def __init__(self, name=None, created_time=None):
+    def __init__(self, name=None, created_time=None, in_channels=1, num_classes=10):
         super(MnistNet, self).__init__(f'{name}_Simple', created_time)
 
-        self.conv1 = nn.Conv2d(1, 20, 5, 1)
+        self.conv1 = nn.Conv2d(in_channels, 20, 5, 1)
         self.conv2 = nn.Conv2d(20, 50, 5, 1)
         self.fc1 = nn.Linear(4 * 4 * 50, 500)
-        self.fc2 = nn.Linear(500, 10)
+        self.fc2 = nn.Linear(500, num_classes)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -144,5 +144,4 @@ if __name__ == '__main__':
     # grads[0] = np.reshape(client_grad[-2].cpu().data.numpy(), (grad_len))
     # print(grads)
     # print(grads[0].shape)
-
 
