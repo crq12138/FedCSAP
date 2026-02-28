@@ -92,8 +92,12 @@ class Helper:
         # self.folder_path = f'saved_models/model_{self.name}_{current_time}_no_models_{self.params["no_models"]}'
 
         hash_value = get_hash_from_param_file(self.params)
-        # self.folder_path = f'saved_models/{current_time}_{hash_value}'
-        self.folder_path = f'saved_models/{hash_value}'
+        run_name = self.params.get('run_name')
+        if run_name is not None:
+            self.folder_path = os.path.join('runs', run_name)
+        else:
+            # self.folder_path = f'saved_models/{current_time}_{hash_value}'
+            self.folder_path = f'saved_models/{hash_value}'
 
         # if folder exists and a result_dict.pkl exists, then abort
         if os.path.exists(self.folder_path):
@@ -104,7 +108,7 @@ class Helper:
                 shutil.rmtree(self.folder_path)
                 os.makedirs(self.folder_path)
         else:
-            os.mkdir(self.folder_path)
+            os.makedirs(self.folder_path)
 
         # write a dummy file to the folder with the name as time
         with open(f'{self.folder_path}/{current_time}', 'w') as f:
