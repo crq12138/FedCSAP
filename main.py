@@ -116,6 +116,10 @@ def run(params_loaded):
         helper = ImageHelper(current_time=current_time, params=params_loaded,
                              name=params_loaded.get('name', 'fmnist'))
         helper.load_data()
+    elif params_loaded['type'] == config.TYPE_PATHMNIST:
+        helper = ImageHelper(current_time=current_time, params=params_loaded,
+                             name=params_loaded.get('name', 'pathmnist'))
+        helper.load_data()
     elif params_loaded['type'] == config.TYPE_EMNIST:
         helper = ImageHelper(current_time=current_time, params=params_loaded,
                              name=params_loaded.get('name', 'emnist'))
