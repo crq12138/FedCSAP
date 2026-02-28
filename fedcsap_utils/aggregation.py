@@ -78,13 +78,49 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         val_score_by_class, _, _ = validation_test(helper, target_model, val_name)
         baseline_profile[val_name] = [float(val_score_by_class[i]) for i in range(num_of_classes)]
 
+    flat_updates = [helper.flatten_gradient_v2(delta_model) for delta_model in delta_models]
+    norms = np.array([np.linalg.norm(grad) for grad in flat_updates], dtype=np.float32)
+
+    contrib_adjustment = helper.params['contrib_adjustment'] if helper.params['contrib_adjustment'] is not None else 0.25
+
     representative_scores = []
     per_client_delta_f1 = {}
     for idx, rep_name in enumerate(names):
         rep_model = helper.new_model()
         rep_model.copy_params(helper.target_model.state_dict())
 
-        rep_update = delta_models[idx]
+        # bijective-style representative model: use the target client as anchor and
+        # blend in other clients by cosine similarity with contribution control.
+        cos_sims = np.array([float(np.dot(anchor_grad, flat_updates[idx])) for anchor_grad in flat_updates], dtype=np.float32)
+        denom = (norms * norms[idx])
+        denom = np.where(denom > 0, denom, 1e-12)
+        cos_sims = cos_sims / denom
+        cos_sims = np.maximum(cos_sims, 0.0)
+
+        norm_ref = norms[idx]
+        clip_vals = np.array([
+            min(float(norm_ref / norm), 1.0) if norm > 0 else 1.0
+            for norm in norms
+        ], dtype=np.float32)
+        weight_vec = cos_sims * clip_vals
+        weight_vec[idx] = 1.0
+
+        others_contrib = float(np.sum(weight_vec) - weight_vec[idx])
+        if others_contrib > 0:
+            weight_vec = weight_vec * (contrib_adjustment / others_contrib)
+            weight_vec[idx] = 1.0 - contrib_adjustment
+        else:
+            weight_vec = np.zeros_like(weight_vec)
+            weight_vec[idx] = 1.0
+
+        total = float(np.sum(weight_vec))
+        if total <= 0:
+            weight_vec = np.zeros_like(weight_vec)
+            weight_vec[idx] = 1.0
+        else:
+            weight_vec = weight_vec / total
+
+        rep_update = helper.weighted_average_oracle(delta_models, torch.tensor(weight_vec))
         for layer_name, layer_data in rep_model.state_dict().items():
             update_per_layer = rep_update[layer_name]
             try:
