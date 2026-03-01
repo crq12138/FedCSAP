@@ -20,6 +20,7 @@ import numpy as np
 
 from models.resnet_cifar import ResNet18
 from models.MnistNet import MnistNet, MnistNet_Letters
+from models.PathMnistNet import PathMnistNet
 from models.resnet_tinyimagenet import resnet18
 from models.resnet_celebA import Resnet18
 logger = logging.getLogger("logger")
@@ -72,14 +73,10 @@ class ImageHelper(Helper):
             target_model = MnistNet(name='Target',
                                     created_time=self.params['current_time'])
         elif self.params['type'] == config.TYPE_PATHMNIST:
-            local_model = MnistNet(name='Local',
-                                   created_time=self.params['current_time'],
-                                   in_channels=3,
-                                   num_classes=9)
-            target_model = MnistNet(name='Target',
-                                    created_time=self.params['current_time'],
-                                    in_channels=3,
-                                    num_classes=9)
+            local_model = PathMnistNet(name='Local',
+                                       created_time=self.params['current_time'])
+            target_model = PathMnistNet(name='Target',
+                                        created_time=self.params['current_time'])
         elif self.params['type']==config.TYPE_EMNIST_LETTERS:
             local_model = MnistNet_Letters(name='Local',
                                    created_time=self.params['current_time'])
@@ -129,10 +126,8 @@ class ImageHelper(Helper):
                                     created_time=self.params['current_time'])
 
         elif self.params['type'] == config.TYPE_PATHMNIST:
-            new_model = MnistNet(name='Dummy',
-                                    created_time=self.params['current_time'],
-                                    in_channels=3,
-                                    num_classes=9)
+            new_model = PathMnistNet(name='Dummy',
+                                      created_time=self.params['current_time'])
 
         elif self.params['type']==config.TYPE_EMNIST_LETTERS:
             new_model = MnistNet_Letters(name='Dummy',

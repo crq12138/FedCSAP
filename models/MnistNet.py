@@ -36,8 +36,10 @@ class MnistNet(SimpleNet):
         # x = x.view(-1, in_features)
         # x = self.fc2(x)
 
-        # return raw logits; loss is computed with cross_entropy in training/eval
-        return x
+        # normal return:
+        return F.log_softmax(x, dim=1)
+        # soft max is used for generate SDT data
+        # return F.softmax(x, dim=1)
 
 
 class MnistNet_Letters(SimpleNet):
@@ -89,7 +91,7 @@ class MnistNet_Letters(SimpleNet):
         # Final output layer
         x = self.fc3(x)
         
-        return x
+        return F.log_softmax(x, dim=1)
 
 if __name__ == '__main__':
     model=MnistNet()
