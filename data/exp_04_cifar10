@@ -37,7 +37,7 @@ start_run() {
   echo "Started ${run_tag}: attack=${attack_method}, mal_pcnt=${mal_pcnt}, aggregation=${aggregation_method}, adversary_count=${adversary_count}, pid=$!"
 }
 
-aggregations=(fedcsap flshield fltrust krum AFA FedAvg median foolsgold)
+aggregations=(fedcsap flshield fltrust krum afa fedavg median foolsgold)
 levels=(0.3 0.2 0.1)
 attacks=(targeted_label_flip inner_product_manipulation sf)
 
