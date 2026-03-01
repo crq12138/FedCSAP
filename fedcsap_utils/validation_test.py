@@ -125,7 +125,10 @@ def validation_test_fun(helper, network, given_test_loader=None, is_poisonous=Fa
             correct_by_class_per_example[class_label] = np.nan
             loss_by_class[class_label] = 0.
             loss_by_class_per_example[class_label] = np.nan
-            f1_by_class[class_label] = np.nan
+            # For FedCSAP, validation_metric is f1. Returning NaN here can
+            # poison representative score computation when a validator has no
+            # sample for a class (common with long-tail/Dirichlet partitions).
+            f1_by_class[class_label] = 0.
         else:
             correct_by_class_per_example[class_label] = 100. * correct_by_class[class_label]/ count_per_class[class_label]
             loss_by_class_per_example[class_label] = loss_by_class[class_label]/ count_per_class[class_label]
