@@ -54,7 +54,7 @@ committee_validation_sample_ratio: {{ committee_validation_sample_ratio|default(
 
 committee_election: {{ committee_election|default('reputation') }}
 
-# aggregation_methods Allowed values are: [ 'mean', 'geom_median','flame', 'flshield', 'fedcsap', 'afa', 'foolsgold']
+# aggregation_methods Allowed values are: [ 'mean', 'fedavg', 'geom_median', 'median', 'krum', 'flame', 'flshield', 'fedcsap', 'fltrust', 'afa', 'foolsgold']
 aggregation_methods: {{ get_aggregation_methods(aggregation_methods) }}
 
 {% if get_aggregation_methods(aggregation_methods) == 'mean' %}
@@ -130,6 +130,7 @@ attack_methods_options:
   - 'targeted_label_flip'
   - 'dba'
   - 'inner_product_manipulation'
+  - 'sf'
   - 'attack_of_the_tails'
   - 'semantic_attack'
 attack_methods: {{ get_attack_methods(attack_methods) }}

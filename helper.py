@@ -460,7 +460,7 @@ class Helper:
                  number of training samples corresponding to the update, and update
                  is a list of variable weights
          """
-        if self.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_FEDCSAP, config.AGGR_AFA, config.AGGR_MEAN]:
+        if self.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_FEDCSAP, config.AGGR_AFA, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
             updates = dict()
             for i in range(0, len(state_keys)):
                 local_model_gradients = epochs_submit_update_dict[state_keys[i]][0][0] # agg 1 interval
@@ -1282,6 +1282,62 @@ class Helper:
             new_delta_models.append(delta_models[bad_count+i])
 
         return new_delta_models
+
+
+    def median(self, target_model, updates, epoch):
+        names = []
+        delta_models = []
+        for name, data in updates.items():
+            delta_models.append(data[2])
+            names.append(name)
+
+        aggregate_weights = {}
+        for layer_name in delta_models[0].keys():
+            layer_updates = torch.stack([dm[layer_name].float() for dm in delta_models], dim=0)
+            aggregate_weights[layer_name] = torch.median(layer_updates, dim=0).values
+
+        for name, data in target_model.state_dict().items():
+            update_per_layer = aggregate_weights[name] * (self.params["eta"])
+            try:
+                data.add_(update_per_layer)
+            except:
+                data.add_(update_per_layer.to(data.dtype))
+
+        return True
+
+    def krum(self, target_model, updates, epoch):
+        names = []
+        delta_models = []
+        for name, data in updates.items():
+            delta_models.append(data[2])
+            names.append(name)
+
+        grads = [self.flatten_gradient_v2(delta_model) for delta_model in delta_models]
+        distance_matrix = euclidean_distances(grads, grads)
+
+        num_clients = len(grads)
+        num_adv = len([name for name in names if name in self.adversarial_namelist])
+        byzantine_count = min(num_adv, max(0, (num_clients - 2) // 2))
+        neighbor_count = num_clients - byzantine_count - 2
+        if neighbor_count <= 0:
+            neighbor_count = max(1, num_clients - 1)
+
+        krum_scores = []
+        for i in range(num_clients):
+            sorted_dist = np.sort(distance_matrix[i])[1:]
+            krum_scores.append(np.sum(sorted_dist[:neighbor_count]))
+
+        chosen_idx = int(np.argmin(np.array(krum_scores)))
+        aggregate_weights = delta_models[chosen_idx]
+
+        for name, data in target_model.state_dict().items():
+            update_per_layer = aggregate_weights[name] * (self.params["eta"])
+            try:
+                data.add_(update_per_layer)
+            except:
+                data.add_(update_per_layer.to(data.dtype))
+
+        return True
 
 
     def flame(self, target_model, updates, epoch):

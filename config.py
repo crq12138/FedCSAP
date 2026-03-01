@@ -10,7 +10,11 @@ def set_device(dev):
     device = torch.device(dev)
 
 AGGR_MEAN = 'mean'
+AGGR_FEDAVG = 'fedavg'
 AGGR_GEO_MED = 'geom_median'
+AGGR_MEDIAN = 'median'
+AGGR_KRUM = 'krum'
+AGGR_FOOLSGOLD = 'foolsgold'
 AGGR_FLAME='flame'
 AGGR_FLTRUST = 'fltrust'
 AGGR_FLSHIELD = 'flshield'
@@ -20,8 +24,29 @@ AGGR_AFA = 'afa'
 ATTACK_DBA = 'dba'
 ATTACK_TLF = 'targeted_label_flip'
 ATTACK_IPM = 'inner_product_manipulation'
+ATTACK_SF = 'sf'
 ATTACK_AOTT = 'attack_of_the_tails'
 ATTACK_SEMANTIC = 'semantic_attack'
+
+
+def normalize_aggregation_method(method):
+    if method is None:
+        return method
+
+    method_str = str(method)
+    normalized = method_str.lower()
+    alias_map = {
+        'fedavg': AGGR_FEDAVG,
+        'avg': AGGR_MEAN,
+        'afa': AGGR_AFA,
+    }
+    return alias_map.get(normalized, normalized)
+
+
+def normalize_attack_method(method):
+    if method is None:
+        return method
+    return str(method).lower()
 MAX_UPDATE_NORM = 1000  # reject all updates larger than this amount
 patience_iter=20
 

@@ -143,10 +143,14 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                             (1 - helper.params['alpha_loss']) * distance_loss
                         # main.logger.info(f'distance_loss: {distance_loss}, class_loss: {class_loss}, loss: {loss}')
                         loss.backward()
+                        if helper.params['attack_methods'] == config.ATTACK_SF:
+                            for param in model.parameters():
+                                if param.grad is not None:
+                                    param.grad.mul_(-1)
 
                         # get gradients
                         # if helper.params['aggregation_methods']==config.AGGR_FLAME:
-                        if helper.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_AFA, config.AGGR_MEAN]:
+                        if helper.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_AFA, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
                             for i, (name, params) in enumerate(model.named_parameters()):
                                 if params.requires_grad:
                                     if internal_epoch == 1 and batch_id == 0:
@@ -283,10 +287,14 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                         output = model(data)
                         loss = nn.functional.cross_entropy(output, targets)
                         loss.backward()
+                        if helper.params['attack_methods'] == config.ATTACK_SF and agent_name_key in helper.adversarial_namelist and (epoch in localmodel_poison_epochs):
+                            for param in model.parameters():
+                                if param.grad is not None:
+                                    param.grad.mul_(-1)
 
                         # get gradients
                         # if helper.params['aggregation_methods'] == config.AGGR_FLAME:
-                        if helper.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_AFA, config.AGGR_MEAN]:
+                        if helper.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_AFA, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
                             for i, (name, params) in enumerate(model.named_parameters()):
                                 if params.requires_grad:
                                     if internal_epoch == 1 and batch_id == 0:
@@ -396,7 +404,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                 last_local_model[name] = copy.deepcopy(data)
 
             # if helper.params['aggregation_methods'] == config.AGGR_FLAME:
-            # if helper.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_AFA, config.AGGR_MEAN]:
+            # if helper.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_AFA, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
             #     epochs_local_update_list.append(client_grad)
             # else:
             #     epochs_local_update_list.append(local_model_update_dict)
