@@ -198,6 +198,13 @@ class Helper:
             committee_size = self.params['no_models']
         committee_size = min(int(committee_size), len(self.participants_list))
 
+        committee_election = str(self.params.get('committee_election', 'reputation')).lower()
+        if committee_election == 'random':
+            rng = random.Random(0)
+            self.current_committee = rng.sample(self.participants_list, committee_size)
+            logger.info(f'Random committee election at epoch {epoch}: {self.current_committee}')
+            return self.current_committee
+
         self._ensure_reputation_state()
         reputations = [self.get_participant_reputation(p) for p in self.participants_list]
         min_weight = 1e-6
