@@ -142,12 +142,6 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                         loss = helper.params['alpha_loss'] * class_loss + \
                             (1 - helper.params['alpha_loss']) * distance_loss
                         # main.logger.info(f'distance_loss: {distance_loss}, class_loss: {class_loss}, loss: {loss}')
-                        if not torch.isfinite(loss):
-                            main.logger.warning(
-                                'Skip non-finite poison loss at epoch %s, client %s, internal_epoch %s, batch %s',
-                                epoch, agent_name_key, internal_epoch, batch_id
-                            )
-                            continue
                         loss.backward()
 
                         # get gradients
@@ -288,12 +282,6 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                         dataset_size += len(data)
                         output = model(data)
                         loss = nn.functional.cross_entropy(output, targets)
-                        if not torch.isfinite(loss):
-                            main.logger.warning(
-                                'Skip non-finite clean loss at epoch %s, client %s, internal_epoch %s, batch %s',
-                                epoch, agent_name_key, internal_epoch, batch_id
-                            )
-                            continue
                         loss.backward()
 
                         # get gradients
