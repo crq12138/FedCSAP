@@ -14,6 +14,7 @@ logger = logging.getLogger('logger')
 
 def _compute_cvar_bottom_q_mean(delta_f1_by_class, bottom_q):
     scores = np.array(delta_f1_by_class, dtype=np.float32)
+    scores = scores[np.isfinite(scores)]
     if scores.size == 0:
         return 0.0
     q = float(bottom_q)
@@ -51,10 +52,28 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
     names = []
     delta_models = []
     grads = []
+    def _is_finite_update(delta_model):
+        for tensor in delta_model.values():
+            if not torch.isfinite(tensor).all():
+                return False
+        return True
+
+    dropped_non_finite = []
     for name, data in updates.items():
+        if not _is_finite_update(data[2]):
+            dropped_non_finite.append(name)
+            continue
         names.append(name)
         grads.append(data[1])
         delta_models.append(data[2])
+
+    if dropped_non_finite:
+        logger.warning(
+            'fedcsap epoch %s: dropped %s clients with non-finite updates: %s',
+            epoch,
+            len(dropped_non_finite),
+            dropped_non_finite,
+        )
 
     if len(names) == 0:
         logger.warning('No updates for fedcsap at epoch %s.', epoch)
