@@ -97,6 +97,8 @@ def configure_run_logging(run_name):
 
 def run(params_loaded):
     params_loaded = defaultdict(lambda: None, params_loaded)
+    params_loaded['aggregation_methods'] = config.normalize_aggregation_method(params_loaded['aggregation_methods'])
+    params_loaded['attack_methods'] = config.normalize_attack_method(params_loaded['attack_methods'])
     print(f'gpu requested: {params_loaded["gpu"]}')
     # os.environ['CUDA_VISIBLE_DEVICES'] = str(params_loaded['gpu'])
     current_time = datetime.datetime.now().strftime('%b.%d_%H.%M.%S')
@@ -261,7 +263,7 @@ def run(params_loaded):
             is_updated, names, weights = helper.afa_method(helper.target_model, updates)
         elif helper.params['aggregation_methods'] == config.AGGR_FLTRUST:
             is_updated, names, weights = helper.fltrust(helper.target_model, updates, epoch)
-        elif helper.params['aggregation_methods'] == config.AGGR_MEAN:
+        elif helper.params['aggregation_methods'] in [config.AGGR_MEAN, config.AGGR_FEDAVG]:
             # Average the models
             # is_updated = helper.average_shrink_models(weight_accumulator=weight_accumulator,
             #                                           target_model=helper.target_model,
@@ -269,10 +271,14 @@ def run(params_loaded):
             # num_oracle_calls = 1
             is_updated = helper.fedavg(helper.target_model, updates, epoch)
         elif helper.params['aggregation_methods'] == config.AGGR_GEO_MED:
-            
             maxiter = helper.params['geom_median_maxiter']
             num_oracle_calls, is_updated, names, weights, alphas = helper.geometric_median_update(helper.target_model, updates, maxiter=maxiter)
-
+        elif helper.params['aggregation_methods'] == config.AGGR_MEDIAN:
+            is_updated = helper.median(helper.target_model, updates, epoch)
+        elif helper.params['aggregation_methods'] == config.AGGR_KRUM:
+            is_updated = helper.krum(helper.target_model, updates, epoch)
+        elif helper.params['aggregation_methods'] == config.AGGR_FOOLSGOLD:
+            is_updated, names, weights, alphas = helper.foolsgold_update(helper.target_model, updates)
         elif helper.params['aggregation_methods'] == config.AGGR_FLAME:
             helper.flame(helper.target_model, updates, epoch)
             num_oracle_calls = 1
