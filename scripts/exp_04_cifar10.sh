@@ -7,6 +7,18 @@ set -euo pipefail
 # 聚合方式：fedcsap / flshield / fltrust / krum / AFA / FedAvg / median / foolsgold
 # 用法：
 #   bash data/exp_04_cifar10
+# 可选：
+#   MAX_PARALLEL=3 bash scripts/exp_04_cifar10.sh
+#   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True bash scripts/exp_04_cifar10.sh
+
+MAX_PARALLEL=${MAX_PARALLEL:-3}
+PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+export PYTORCH_CUDA_ALLOC_CONF
+
+if ! [[ "${MAX_PARALLEL}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "MAX_PARALLEL must be a positive integer, got: ${MAX_PARALLEL}" >&2
+  exit 1
+fi
 
 start_run() {
   local run_tag="$1"
@@ -56,15 +68,38 @@ adversary_count_for_level() {
 }
 
 run_id=9
+group_index=1
+jobs_in_group=0
+
 for attack in "${attacks[@]}"; do
   for aggr in "${aggregations[@]}"; do
     for level in "${levels[@]}"; do
       run_tag=$(printf 'run_%03d' "${run_id}")
       adversary_count=$(adversary_count_for_level "${level}")
+
+      if (( jobs_in_group == 0 )); then
+        echo "===== Group ${group_index} started (max parallel: ${MAX_PARALLEL}) ====="
+      fi
+
       start_run "${run_tag}" "${attack}" "${level}" "${aggr}" "${adversary_count}"
       run_id=$((run_id + 1))
+      jobs_in_group=$((jobs_in_group + 1))
+
+      if (( jobs_in_group == MAX_PARALLEL )); then
+        echo "===== Group ${group_index} waiting for ${jobs_in_group} job(s) to finish ====="
+        wait
+        echo "===== Group ${group_index} finished ====="
+        group_index=$((group_index + 1))
+        jobs_in_group=0
+      fi
     done
   done
 done
 
-echo "All jobs started in background. Total runs: $((run_id - 9))"
+if (( jobs_in_group > 0 )); then
+  echo "===== Group ${group_index} waiting for remaining ${jobs_in_group} job(s) to finish ====="
+  wait
+  echo "===== Group ${group_index} finished ====="
+fi
+
+echo "All jobs completed. Total runs: $((run_id - 9))"
