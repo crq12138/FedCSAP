@@ -1148,6 +1148,18 @@ class Helper:
         # only for testing purpose
         # grads = [self.flatten_gradient(client_grad) for client_grad in client_grads]
         grads = [self.flatten_gradient_v2(delta_model) for delta_model in delta_models]
+        sanitized_grads = []
+        for idx, grad in enumerate(grads):
+            if not np.isfinite(grad).all():
+                logger.warning(
+                    'Non-finite values detected in %s update (nan=%s, inf=%s); replacing with zeros before FLTrust cosine similarity.',
+                    names[idx],
+                    np.isnan(grad).sum(),
+                    np.isinf(grad).sum(),
+                )
+                grad = np.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)
+            sanitized_grads.append(grad)
+        grads = sanitized_grads
         logger.info(f'grad shape: {grads[0].shape}')
         # grads = client_grads
         clean_server_grad = grads[-1]
