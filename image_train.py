@@ -127,7 +127,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                             data, targets, poison_num = helper.get_poison_batch(batch, adversarial_index=adversarial_index,evaluation=False)
                         elif helper.params['attack_methods'] == config.ATTACK_TLF:
                             data, targets, poison_num = helper.get_poison_batch_for_targeted_label_flip(batch)
-                        elif helper.params['attack_methods'] in [config.ATTACK_AOTT, config.ATTACK_IPM, config.ATTACK_SEMANTIC]:
+                        elif helper.params['attack_methods'] in [config.ATTACK_AOTT, config.ATTACK_IPM, config.ATTACK_SEMANTIC, config.ATTACK_SF]:
                             data, targets = helper.get_batch(None, batch)
                             poison_num = 0
                         poison_optimizer.zero_grad()

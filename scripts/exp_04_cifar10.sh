@@ -47,7 +47,7 @@ adversary_count_for_level() {
   case "$1" in
     0.3) echo 8 ;;
     0.2) echo 5 ;;
-    0.1) echo 3 ;;
+    0.1) echo 2 ;;
     *)
       echo "Unsupported mal_pcnt: $1" >&2
       exit 1

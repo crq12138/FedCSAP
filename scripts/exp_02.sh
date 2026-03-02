@@ -34,7 +34,7 @@ start_run() {
 
 # 25 * 0.3 = 7.5，按模板中的 round 逻辑取 8
 start_run run_005 pathmnist targeted_label_flip 8
-start_run run_006 cifar inner_product_manipulation 8
+# start_run run_006 cifar inner_product_manipulation 8
 start_run run_007 pathmnist inner_product_manipulation 8
 
 echo "All jobs started in background."
