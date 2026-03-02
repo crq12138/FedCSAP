@@ -200,7 +200,7 @@ class Helper:
 
         committee_election = str(self.params.get('committee_election', 'reputation')).lower()
         if committee_election == 'random':
-            rng = random.Random(0)
+            rng = random.Random(0 + int(epoch))
             self.current_committee = rng.sample(self.participants_list, committee_size)
             logger.info(f'Random committee election at epoch {epoch}: {self.current_committee}')
             return self.current_committee
