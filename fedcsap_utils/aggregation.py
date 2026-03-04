@@ -84,6 +84,42 @@ def _safe_cosine_sims(flat_updates, idx):
     return sims.astype(np.float32)
 
 
+
+
+def _select_stable_clients(rep_scores, high_cluster_flags):
+    num_clients = len(rep_scores)
+    if num_clients == 0:
+        return []
+
+    selected = [i for i, flag in enumerate(high_cluster_flags) if flag == 1]
+
+    score_arr = np.array(rep_scores, dtype=np.float32)
+    spread = float(np.max(score_arr) - np.min(score_arr)) if num_clients > 0 else 0.0
+
+    # If scores are almost indistinguishable, avoid collapsing to a single client.
+    if spread < 1e-6:
+        min_k = max(1, int(np.ceil(num_clients * 0.5)))
+        min_k = min(num_clients, max(2, min_k)) if num_clients > 1 else 1
+        top_indices = np.argsort(score_arr)[-min_k:]
+        return sorted(int(i) for i in top_indices)
+
+    # If kmeans degenerates to an empty/single selection, keep a small top-k committee.
+    if len(selected) <= 1 and num_clients > 1:
+        min_k = max(2, int(np.ceil(num_clients * 0.5)))
+        min_k = min(num_clients, min_k)
+        top_indices = np.argsort(score_arr)[-min_k:]
+        selected = sorted(int(i) for i in top_indices)
+
+    return selected
+
+
+def _scale_update_dict(update_dict, scale):
+    if scale >= 1.0:
+        return update_dict
+    for layer_name, layer_data in update_dict.items():
+        update_dict[layer_name] = layer_data * scale
+    return update_dict
+
 def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
     start = time.time()
 
@@ -208,7 +244,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
 
     # 1D kmeans with min/max anchors
     high_cluster_flags = _one_dim_kmeans_split(representative_scores)
-    selected_indices = [i for i, flag in enumerate(high_cluster_flags) if flag == 1]
+    selected_indices = _select_stable_clients(representative_scores, high_cluster_flags)
 
     if len(selected_indices) == 0:
         selected_indices = [int(np.argmax(representative_scores))]
@@ -223,6 +259,25 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         weight_vec[i] = 1.0 / len(selected_indices)
 
     aggregate_weights = helper.weighted_average_oracle(sanitized_delta_models, torch.tensor(weight_vec))
+
+    positive_norms = norms[norms > 0]
+    median_client_norm = float(np.median(positive_norms)) if positive_norms.size > 0 else 0.0
+    agg_flat = np.array(helper.flatten_gradient_v2(aggregate_weights), dtype=np.float64)
+    agg_norm = float(np.linalg.norm(agg_flat)) if agg_flat.size > 0 else 0.0
+
+    cfg_clip = helper.params.get('fedcsap_global_clip_norm', None) if isinstance(helper.params, dict) else None
+    max_agg_norm = float(cfg_clip) if cfg_clip is not None else (2.0 * median_client_norm if median_client_norm > 0 else 0.0)
+    if max_agg_norm > 0 and np.isfinite(agg_norm) and agg_norm > max_agg_norm:
+        scale = max_agg_norm / max(agg_norm, 1e-12)
+        aggregate_weights = _scale_update_dict(aggregate_weights, scale)
+        logger.warning(
+            'fedcsap epoch %s: aggregate update norm %.6e exceeds clip %.6e; scaling by %.6f.',
+            epoch,
+            agg_norm,
+            max_agg_norm,
+            scale,
+        )
+
     for layer_name, layer_data in target_model.state_dict().items():
         update_per_layer = aggregate_weights[layer_name] * helper.params['eta']
         try:
