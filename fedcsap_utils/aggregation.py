@@ -78,8 +78,21 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         val_score_by_class, _, _ = validation_test(helper, target_model, val_name)
         baseline_profile[val_name] = [float(val_score_by_class[i]) for i in range(num_of_classes)]
 
-    flat_updates = [helper.flatten_gradient_v2(delta_model) for delta_model in delta_models]
+    flat_updates = []
+    for client_name, delta_model in zip(names, delta_models):
+        flat_grad = np.array(helper.flatten_gradient_v2(delta_model), dtype=np.float32)
+        if not np.all(np.isfinite(flat_grad)):
+            logger.warning(
+                'fedcsap epoch %s: non-finite update detected for client %s; sanitizing before similarity.',
+                epoch,
+                client_name,
+            )
+            flat_grad = np.nan_to_num(flat_grad, nan=0.0, posinf=0.0, neginf=0.0)
+        flat_updates.append(flat_grad)
+
     norms = np.array([np.linalg.norm(grad) for grad in flat_updates], dtype=np.float32)
+    if not np.all(np.isfinite(norms)):
+        norms = np.nan_to_num(norms, nan=0.0, posinf=0.0, neginf=0.0)
 
     contrib_adjustment = helper.params['contrib_adjustment'] if helper.params['contrib_adjustment'] is not None else 0.25
 
@@ -92,14 +105,16 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         # bijective-style representative model: use the target client as anchor and
         # blend in other clients by cosine similarity with contribution control.
         cos_sims = np.array([float(np.dot(anchor_grad, flat_updates[idx])) for anchor_grad in flat_updates], dtype=np.float32)
+        if not np.all(np.isfinite(cos_sims)):
+            cos_sims = np.nan_to_num(cos_sims, nan=0.0, posinf=0.0, neginf=0.0)
         denom = (norms * norms[idx])
         denom = np.where(denom > 0, denom, 1e-12)
         cos_sims = cos_sims / denom
         cos_sims = np.maximum(cos_sims, 0.0)
 
-        norm_ref = norms[idx]
+        norm_ref = float(norms[idx]) if np.isfinite(norms[idx]) else 0.0
         clip_vals = np.array([
-            min(float(norm_ref / norm), 1.0) if norm > 0 else 1.0
+            min(float(norm_ref / norm), 1.0) if np.isfinite(norm) and norm > 0 else 1.0
             for norm in norms
         ], dtype=np.float32)
         weight_vec = cos_sims * clip_vals
