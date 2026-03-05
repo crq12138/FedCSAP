@@ -9,6 +9,7 @@ set -euo pipefail
 EPOCHS="${EPOCHS:-50}"
 TOTAL_PARTICIPANTS="${TOTAL_PARTICIPANTS:-25}"
 NO_MODELS="${NO_MODELS:-20}"
+COMMITTEE_SIZE="${COMMITTEE_SIZE:-5}"
 LR_ETA="${LR_ETA:-1.0}"
 LR="${LR:-0.01}"
 SEED="${SEED:-0}"
@@ -22,7 +23,7 @@ fi
 mkdir -p "runs/${RUN_TAG}"
 
 echo "[INFO] Starting clean PathMNIST FedAvg run"
-echo "[INFO] RUN_TAG=${RUN_TAG}, epochs=${EPOCHS}, participants=${TOTAL_PARTICIPANTS}, no_models=${NO_MODELS}, lr=${LR}, eta=${LR_ETA}"
+echo "[INFO] RUN_TAG=${RUN_TAG}, epochs=${EPOCHS}, participants=${TOTAL_PARTICIPANTS}, committee=${COMMITTEE_SIZE}, no_models=${NO_MODELS}, lr=${LR}, eta=${LR_ETA}"
 
 cmd=(
   python main.py
@@ -37,6 +38,7 @@ cmd=(
   --lr="${LR}"
   --number_of_total_participants="${TOTAL_PARTICIPANTS}"
   --no_models="${NO_MODELS}"
+  --committee_size="${COMMITTEE_SIZE}"
   --noniid=iid
   --eta="${LR_ETA}"
   --minimize_logging=false

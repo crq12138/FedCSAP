@@ -1,0 +1,51 @@
+---
+gpu: 0
+type: pathmnist
+
+# optimization
+epochs: 100
+internal_epochs: 3
+aggr_epoch_interval: 1
+lr: 0.05
+momentum: 0.9
+decay: 0.0005
+eta: 1.0
+
+# data / federation
+batch_size: 64
+test_batch_size: 64
+number_of_total_participants: 25
+committee_size: 5
+no_models: 20
+is_random_namelist: true
+is_random_adversary: true
+
+# split mode (iid equal split)
+noniid: false
+sampling_dirichlet: false
+
+# clean setup
+aggregation_methods: fedavg
+attack_methods: targeted_label_flip
+tlf_label: easy
+is_poison: false
+mal_pcnt: 0
+number_of_adversary_targeted_label_flip: 0
+
+# misc
+resumed_model: false
+save_model: true
+save_on_epochs: [1, 10, 20, 30, 50, 80, 100]
+committee_election: reputation
+minimize_logging: false
+speed_boost: true
+
+# required defaults used elsewhere
+committee_validation_sample_ratio: 0.2
+committee_validation_sample_size: null
+validation_metric: LIPC
+fg_use_memory: true
+diff_privacy: false
+sigma: 0.001
+save_data: 1
+poison_epochs: [1]

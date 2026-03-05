@@ -94,6 +94,11 @@ start_run() {
     --"${run_tag}"
   )
 
+  if [[ "${aggregation_method}" == "flshield" ]]; then
+    cmd+=(--bijective_flshield)
+  fi
+
+
   if [[ "${DRY_RUN}" == "1" ]]; then
     printf 'DRY_RUN: %q ' "${cmd[@]}"
     echo
