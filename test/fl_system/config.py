@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class FLConfig:
     dataset: str = "cifar10"  # cifar10 | pathmnist
-    data_dir: str = "./test/data"
+    data_dir: str = "./data"
     batch_size: int = 64
 
     # 参考 exp_04_cifar10.sh run_057 的参数（在本独立实现中可映射的部分）

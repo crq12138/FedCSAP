@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -33,13 +35,16 @@ def _limited_subset(dataset, max_samples: int | None):
 
 def load_dataset(name: str, data_dir: str):
     name = name.lower()
+    data_root = Path(data_dir).expanduser().resolve()
+    data_root.mkdir(parents=True, exist_ok=True)
+
     if name == "cifar10":
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
         ])
-        train_ds = datasets.CIFAR10(root=data_dir, train=True, download=True, transform=transform)
-        test_ds = datasets.CIFAR10(root=data_dir, train=False, download=True, transform=transform)
+        train_ds = datasets.CIFAR10(root=str(data_root), train=True, download=True, transform=transform)
+        test_ds = datasets.CIFAR10(root=str(data_root), train=False, download=True, transform=transform)
         labels = np.array(train_ds.targets)
         num_classes = 10
         return train_ds, test_ds, labels, num_classes
@@ -55,8 +60,8 @@ def load_dataset(name: str, data_dir: str):
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ])
-        train_ds = PathMNIST(split="train", root=data_dir, download=True, transform=transform)
-        test_ds = PathMNIST(split="test", root=data_dir, download=True, transform=transform)
+        train_ds = PathMNIST(split="train", root=str(data_root), download=True, transform=transform)
+        test_ds = PathMNIST(split="test", root=str(data_root), download=True, transform=transform)
         labels = np.array(train_ds.labels).reshape(-1)
         num_classes = len(medmnist.INFO["pathmnist"]["label"])
         return train_ds, test_ds, labels, num_classes

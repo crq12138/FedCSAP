@@ -16,7 +16,7 @@ from .server import FLServer
 def parse_args():
     p = argparse.ArgumentParser(description="Standalone Federated Learning System (from scratch)")
     p.add_argument("--dataset", choices=["cifar10", "pathmnist"], default="cifar10")
-    p.add_argument("--data-dir", default="./test/data")
+    p.add_argument("--data-dir", default="./data")
     p.add_argument("--rounds", type=int, default=200)
     p.add_argument("--num-clients", type=int, default=20)
     p.add_argument("--dirichlet-alpha", type=float, default=0.9)
