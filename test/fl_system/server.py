@@ -24,9 +24,17 @@ class FLServer:
         for rnd in range(1, self.cfg.rounds + 1):
             client_states = []
             client_weights = []
+            global_state = {
+                k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()
+            }
             for c in self.clients:
                 state, weight = c.local_train(self.model, self.cfg.lr, self.cfg.local_epochs)
-                attacked = c.maybe_attack(state, self.cfg.attack, c.client_id in self.malicious_set)
+                attacked = c.maybe_attack(
+                    state,
+                    global_state,
+                    self.cfg.attack,
+                    c.client_id in self.malicious_set,
+                )
                 client_states.append(attacked)
                 client_weights.append(weight)
 

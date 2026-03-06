@@ -32,9 +32,15 @@ class FLClient:
         state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
         return state, len(self.train_loader.dataset)
 
-    def maybe_attack(self, client_state: dict, attack: str, is_malicious: bool):
+    def maybe_attack(
+        self,
+        client_state: dict,
+        global_state: dict,
+        attack: str,
+        is_malicious: bool,
+    ):
         if not is_malicious or attack == "none":
             return client_state
         if attack == "sf":
-            return apply_sf_attack(client_state)
+            return apply_sf_attack(client_state, global_state)
         raise ValueError(f"Unsupported attack: {attack}")
