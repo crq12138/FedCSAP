@@ -49,6 +49,7 @@ def get_context(type='cifar',
                 noniid=False,
                 resumed_model=True,
                 mal_pcnt=0.4,
+                sf_scale=1.0,
                 *args,
                 **kwargs):
     context = {
@@ -58,7 +59,8 @@ def get_context(type='cifar',
         'attack_methods': attack_methods,
         'noniid': noniid,
         'resumed_model': resumed_model,
-        'mal_pcnt': mal_pcnt
+        'mal_pcnt': mal_pcnt,
+        'sf_scale': sf_scale,
     }
     ## add other kwargs
     for key, value in kwargs.items():

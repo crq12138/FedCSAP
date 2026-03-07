@@ -143,10 +143,6 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                             (1 - helper.params['alpha_loss']) * distance_loss
                         # main.logger.info(f'distance_loss: {distance_loss}, class_loss: {class_loss}, loss: {loss}')
                         loss.backward()
-                        if helper.params['attack_methods'] == config.ATTACK_SF:
-                            for param in model.parameters():
-                                if param.grad is not None:
-                                    param.grad.mul_(-1)
 
                         # get gradients
                         # if helper.params['aggregation_methods']==config.AGGR_FLAME:
@@ -287,10 +283,6 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                         output = model(data)
                         loss = nn.functional.cross_entropy(output, targets)
                         loss.backward()
-                        if helper.params['attack_methods'] == config.ATTACK_SF and agent_name_key in helper.adversarial_namelist and (epoch in localmodel_poison_epochs):
-                            for param in model.parameters():
-                                if param.grad is not None:
-                                    param.grad.mul_(-1)
 
                         # get gradients
                         # if helper.params['aggregation_methods'] == config.AGGR_FLAME:
@@ -396,6 +388,18 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                                                      eid=helper.params['environment_name'],
                                                      name=str(agent_name_key) + "_trigger")
 
+            if (
+                helper.params['attack_methods'] == config.ATTACK_SF
+                and is_poison
+                and agent_name_key in helper.adversarial_namelist
+                and (epoch in localmodel_poison_epochs)
+            ):
+                sf_scale = float(helper.params.get('sf_scale', 1.0))
+                for key, local_value in model.state_dict().items():
+                    global_value = last_local_model[key]
+                    delta = local_value - global_value
+                    model.state_dict()[key].copy_(global_value - sf_scale * delta)
+
             # update the model weight
             local_model_update_dict = dict()
             for name, data in model.state_dict().items():
@@ -419,4 +423,3 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
     # main.logger.info(f'Benign models test accuracy: {avg_benign_test_acc / benign_model_count}')
     # main.logger.info(f'Poison models test accuracy: {avg_mal_test_acc / mal_model_count}')
     return epochs_submit_update_dict, num_samples_dict
-
