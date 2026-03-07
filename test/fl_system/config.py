@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -29,6 +30,6 @@ class FLConfig:
     aggregation: str = "fedavg"
 
     # 快速调试
-    max_train_samples_per_client: int | None = None
-    max_test_samples: int | None = None
-    device: str = "cpu"
+    max_train_samples_per_client: Optional[int] = None
+    max_test_samples: Optional[int] = None
+    device: str = "auto"  # auto | cpu | cuda | mps

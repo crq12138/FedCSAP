@@ -30,7 +30,7 @@ def parse_args():
     p.add_argument("--attack", choices=["none", "sf"], default="sf")
     p.add_argument("--mal-pcnt", type=float, default=0.3)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--device", default="cpu")
+    p.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
     p.add_argument("--max-train-samples-per-client", type=int, default=None)
     p.add_argument("--max-test-samples", type=int, default=None)
     return p.parse_args()
@@ -41,6 +41,15 @@ def set_seed(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+def resolve_device(device: str) -> str:
+    if device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 def main():
@@ -61,7 +70,7 @@ def main():
         attack=args.attack,
         mal_pcnt=args.mal_pcnt,
         seed=args.seed,
-        device=args.device,
+        device=resolve_device(args.device),
         max_train_samples_per_client=args.max_train_samples_per_client,
         max_test_samples=args.max_test_samples,
     )
@@ -88,7 +97,7 @@ def main():
 
     print(
         f"Start FL: dataset={cfg.dataset}, clients={cfg.num_clients}, rounds={cfg.rounds}, "
-        f"attack={cfg.attack}, mal_pcnt={cfg.mal_pcnt}, aggregation={cfg.aggregation}"
+        f"attack={cfg.attack}, mal_pcnt={cfg.mal_pcnt}, aggregation={cfg.aggregation}, device={cfg.device}"
     )
 
     server = FLServer(model=model, clients=clients, test_loader=test_loader, cfg=cfg)
