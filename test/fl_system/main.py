@@ -16,15 +16,18 @@ from .server import FLServer
 def parse_args():
     p = argparse.ArgumentParser(description="Standalone Federated Learning System (from scratch)")
     p.add_argument("--dataset", choices=["cifar10", "pathmnist"], default="cifar10")
-    p.add_argument("--data-dir", default="./test/data")
+    p.add_argument("--data-dir", default="./data")
     p.add_argument("--rounds", type=int, default=200)
     p.add_argument("--num-clients", type=int, default=20)
     p.add_argument("--dirichlet-alpha", type=float, default=0.9)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--lr", type=float, default=0.1)
-    p.add_argument("--local-epochs", type=int, default=1)
+    p.add_argument("--eta", type=float, default=0.1)
+    p.add_argument("--momentum", type=float, default=0.9)
+    p.add_argument("--weight-decay", type=float, default=5e-4)
+    p.add_argument("--local-epochs", type=int, default=2)
     p.add_argument("--aggregation", default="fedavg")
-    p.add_argument("--attack", choices=["none", "sf"], default="none")
+    p.add_argument("--attack", choices=["none", "sf"], default="sf")
     p.add_argument("--mal-pcnt", type=float, default=0.3)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cpu")
@@ -50,6 +53,9 @@ def main():
         dirichlet_alpha=args.dirichlet_alpha,
         batch_size=args.batch_size,
         lr=args.lr,
+        eta=args.eta,
+        momentum=args.momentum,
+        weight_decay=args.weight_decay,
         local_epochs=args.local_epochs,
         aggregation=args.aggregation,
         attack=args.attack,

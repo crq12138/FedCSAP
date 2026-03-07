@@ -14,10 +14,22 @@ class FLClient:
         self.train_loader = train_loader
         self.device = device
 
-    def local_train(self, global_model: nn.Module, lr: float, local_epochs: int):
+    def local_train(
+        self,
+        global_model: nn.Module,
+        lr: float,
+        local_epochs: int,
+        momentum: float,
+        weight_decay: float,
+    ):
         model = copy.deepcopy(global_model).to(self.device)
         model.train()
-        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+        )
         criterion = nn.CrossEntropyLoss()
 
         for _ in range(local_epochs):
