@@ -28,7 +28,13 @@ class FLServer:
                 k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()
             }
             for c in self.clients:
-                state, weight = c.local_train(self.model, self.cfg.lr, self.cfg.local_epochs)
+                state, weight = c.local_train(
+                    self.model,
+                    self.cfg.lr,
+                    self.cfg.local_epochs,
+                    self.cfg.momentum,
+                    self.cfg.weight_decay,
+                )
                 attacked = c.maybe_attack(
                     state,
                     global_state,
@@ -38,8 +44,15 @@ class FLServer:
                 client_states.append(attacked)
                 client_weights.append(weight)
 
-            new_state = self.aggregator.aggregate(client_states, client_weights)
-            self.model.load_state_dict(new_state)
+            avg_state = self.aggregator.aggregate(client_states, client_weights)
+            eta = float(self.cfg.eta)
+            if not 0.0 < eta <= 1.0:
+                raise ValueError("eta must be in (0, 1].")
+
+            blended_state = {}
+            for k, global_tensor in self.model.state_dict().items():
+                blended_state[k] = global_tensor.detach().cpu() + eta * (avg_state[k] - global_tensor.detach().cpu())
+            self.model.load_state_dict(blended_state)
 
             acc = self.evaluate()
             print(f"[Round {rnd:03d}/{self.cfg.rounds}] test_acc={acc:.4f}")

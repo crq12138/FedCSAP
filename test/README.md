@@ -12,7 +12,10 @@
    - committee_size=5
    - noniid=sampling_dirichlet
    - dirichlet_alpha=0.9
-   - lr=0.1（对应 eta=0.1）
+   - lr=0.1（对应 jinja 的本地学习率）
+   - eta=0.1（对应全局模型更新步长）
+   - momentum=0.9, decay=0.0005
+   - local_epochs=2（对应 cifar 的 internal_epochs=2）
    - seed=0
    - 攻击默认 sf，恶意比例默认 0.3
 3. 支持 CIFAR10 与 PATHMNIST，支持 clean 与 SF 攻击模式。
