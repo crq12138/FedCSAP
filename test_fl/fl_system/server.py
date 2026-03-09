@@ -45,14 +45,15 @@ class FLServer:
                 client_weights.append(weight)
 
             avg_state = self.aggregator.aggregate(client_states, client_weights)
-            eta = float(self.cfg.eta)
-            if not 0.0 < eta <= 1.0:
-                raise ValueError("eta must be in (0, 1].")
+            self.model.load_state_dict(avg_state)
+            # eta = float(self.cfg.eta)
+            # if not 0.0 < eta <= 1.0:
+            #     raise ValueError("eta must be in (0, 1].")
 
-            blended_state = {}
-            for k, global_tensor in self.model.state_dict().items():
-                blended_state[k] = global_tensor.detach().cpu() + eta * (avg_state[k] - global_tensor.detach().cpu())
-            self.model.load_state_dict(blended_state)
+            # blended_state = {}
+            # for k, global_tensor in self.model.state_dict().items():
+            #     blended_state[k] = global_tensor.detach().cpu() + eta * (avg_state[k] - global_tensor.detach().cpu())
+            # self.model.load_state_dict(blended_state)
 
             acc = self.evaluate()
             print(f"[Round {rnd:03d}/{self.cfg.rounds}] test_acc={acc:.4f}")

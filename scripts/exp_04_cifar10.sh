@@ -77,6 +77,7 @@ start_run() {
     python main.py
     --type="${type}"
     --aggregation_methods="${aggregation_method}"
+    # --attack_methods="none"
     --attack_methods="${attack_method}"
     --"number_of_adversary_${attack_method}"="${adversary_count}"
     --mal_pcnt="${mal_pcnt}"
