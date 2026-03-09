@@ -18,7 +18,7 @@
    - local_epochs=2（对应 cifar 的 internal_epochs=2）
    - seed=0
    - 攻击默认 sf，恶意比例默认 0.3
-3. 支持 CIFAR10 与 PATHMNIST，支持 clean 与 SF 攻击模式。
+3. 支持 CIFAR10、MNIST 与 PATHMNIST，支持 clean 与 SF 攻击模式。
 4. 聚合器当前为 FedAvg，并通过注册表预留扩展点。
 
 ## 依赖
@@ -58,6 +58,15 @@ python -m test.fl_system.main \
 ```bash
 python -m test.fl_system.main \
   --dataset pathmnist \
+  --attack none \
+  --aggregation fedavg
+```
+
+### MNIST（clean）
+
+```bash
+python -m test.fl_system.main \
+  --dataset mnist \
   --attack none \
   --aggregation fedavg
 ```
