@@ -47,7 +47,18 @@ def load_dataset(name: str, data_dir: str):
         test_ds = datasets.CIFAR10(root=str(data_root), train=False, download=True, transform=transform)
         labels = np.array(train_ds.targets)
         num_classes = 10
-        return train_ds, test_ds, labels, num_classes
+        return train_ds, test_ds, labels, num_classes, 3
+
+    if name == "mnist":
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ])
+        train_ds = datasets.MNIST(root=str(data_root), train=True, download=True, transform=transform)
+        test_ds = datasets.MNIST(root=str(data_root), train=False, download=True, transform=transform)
+        labels = np.array(train_ds.targets)
+        num_classes = 10
+        return train_ds, test_ds, labels, num_classes, 1
 
     if name == "pathmnist":
         try:
@@ -64,7 +75,7 @@ def load_dataset(name: str, data_dir: str):
         test_ds = PathMNIST(split="test", root=str(data_root), download=True, transform=transform)
         labels = np.array(train_ds.labels).reshape(-1)
         num_classes = len(medmnist.INFO["pathmnist"]["label"])
-        return train_ds, test_ds, labels, num_classes
+        return train_ds, test_ds, labels, num_classes, 3
 
     raise ValueError(f"Unsupported dataset: {name}")
 

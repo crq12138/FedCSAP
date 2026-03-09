@@ -4,7 +4,7 @@ from typing import Optional
 
 @dataclass
 class FLConfig:
-    dataset: str = "cifar10"  # cifar10 | pathmnist
+    dataset: str = "cifar10"  # cifar10 | mnist | pathmnist
     data_dir: str = "./data"
     batch_size: int = 64
 

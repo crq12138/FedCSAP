@@ -15,7 +15,7 @@ from .server import FLServer
 
 def parse_args():
     p = argparse.ArgumentParser(description="Standalone Federated Learning System (from scratch)")
-    p.add_argument("--dataset", choices=["cifar10", "pathmnist"], default="cifar10")
+    p.add_argument("--dataset", choices=["cifar10", "mnist", "pathmnist"], default="cifar10")
     p.add_argument("--data-dir", default="./data")
     p.add_argument("--rounds", type=int, default=200)
     p.add_argument("--num-clients", type=int, default=20)
@@ -80,7 +80,7 @@ def main():
 
     set_seed(cfg.seed)
 
-    train_ds, test_ds, labels, num_classes = load_dataset(cfg.dataset, cfg.data_dir)
+    train_ds, test_ds, labels, num_classes, in_channels = load_dataset(cfg.dataset, cfg.data_dir)
     client_loaders = build_client_loaders(
         train_ds,
         labels,
@@ -93,7 +93,7 @@ def main():
     test_loader = build_test_loader(test_ds, cfg.batch_size, cfg.max_test_samples)
 
     clients = [FLClient(i, loader, cfg.device) for i, loader in enumerate(client_loaders)]
-    model = SmallCNN(num_classes=num_classes)
+    model = SmallCNN(num_classes=num_classes, in_channels=in_channels)
 
     print(
         f"Start FL: dataset={cfg.dataset}, clients={cfg.num_clients}, rounds={cfg.rounds}, "
