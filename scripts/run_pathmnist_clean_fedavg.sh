@@ -7,11 +7,13 @@ set -euo pipefail
 # - 若 FedAvg 能学习而 FedCSAP 不能，通常是 FedCSAP 选择/聚合策略问题。
 
 EPOCHS="${EPOCHS:-50}"
-TOTAL_PARTICIPANTS="${TOTAL_PARTICIPANTS:-25}"
+# 与 `test_fl.fl_system.main` 默认配置对齐：20 客户端、每轮全参与。
+TOTAL_PARTICIPANTS="${TOTAL_PARTICIPANTS:-20}"
 NO_MODELS="${NO_MODELS:-20}"
-COMMITTEE_SIZE="${COMMITTEE_SIZE:-5}"
+COMMITTEE_SIZE="${COMMITTEE_SIZE:-0}"
 LR_ETA="${LR_ETA:-1.0}"
-LR="${LR:-0.01}"
+LR="${LR:-0.1}"
+NONIID_MODE="${NONIID_MODE:-sampling_dirichlet}"
 SEED="${SEED:-0}"
 RUN_TAG="${RUN_TAG:-run_clean_pathmnist_fedavg}"
 
@@ -23,7 +25,7 @@ fi
 mkdir -p "runs/${RUN_TAG}"
 
 echo "[INFO] Starting clean PathMNIST FedAvg run"
-echo "[INFO] RUN_TAG=${RUN_TAG}, epochs=${EPOCHS}, participants=${TOTAL_PARTICIPANTS}, committee=${COMMITTEE_SIZE}, no_models=${NO_MODELS}, lr=${LR}, eta=${LR_ETA}"
+echo "[INFO] RUN_TAG=${RUN_TAG}, epochs=${EPOCHS}, participants=${TOTAL_PARTICIPANTS}, committee=${COMMITTEE_SIZE}, no_models=${NO_MODELS}, lr=${LR}, eta=${LR_ETA}, noniid=${NONIID_MODE}"
 
 cmd=(
   python main.py
@@ -39,7 +41,7 @@ cmd=(
   --number_of_total_participants="${TOTAL_PARTICIPANTS}"
   --no_models="${NO_MODELS}"
   --committee_size="${COMMITTEE_SIZE}"
-  --noniid=iid
+  --noniid="${NONIID_MODE}"
   --eta="${LR_ETA}"
   --minimize_logging=false
   --seed="${SEED}"
