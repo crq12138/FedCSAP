@@ -72,7 +72,11 @@ start_run() {
   local mal_pcnt="$4"
   local aggregation_method="$5"
   local adversary_count="$6"
+  local epochs=200
 
+  if [[ "${type}" == "mnist" ]]; then
+    epochs=100
+  fi
   local cmd=(
     python main.py
     --type="${type}"
@@ -81,7 +85,7 @@ start_run() {
     --"number_of_adversary_${attack_method}"="${adversary_count}"
     --mal_pcnt="${mal_pcnt}"
     --resumed_model=false
-    --epochs=200
+    --epochs="${epochs}"
     --number_of_total_participants=25
     --committee_size=5
     --no_models=20

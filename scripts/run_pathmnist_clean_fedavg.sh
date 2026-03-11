@@ -8,12 +8,13 @@ set -euo pipefail
 
 EPOCHS="${EPOCHS:-50}"
 # 与 `test_fl.fl_system.main` 默认配置对齐：20 客户端、每轮全参与。
-TOTAL_PARTICIPANTS="${TOTAL_PARTICIPANTS:-20}"
+TOTAL_PARTICIPANTS="${TOTAL_PARTICIPANTS:-25}"
 NO_MODELS="${NO_MODELS:-20}"
-COMMITTEE_SIZE="${COMMITTEE_SIZE:-0}"
+COMMITTEE_SIZE="${COMMITTEE_SIZE:-5}"
 LR_ETA="${LR_ETA:-1.0}"
 LR="${LR:-0.1}"
 NONIID_MODE="${NONIID_MODE:-sampling_dirichlet}"
+INTERNAL_EPOCHS="${INTERNAL_EPOCHS:-2}"
 SEED="${SEED:-0}"
 RUN_TAG="${RUN_TAG:-run_clean_pathmnist_fedavg}"
 
@@ -25,7 +26,7 @@ fi
 mkdir -p "runs/${RUN_TAG}"
 
 echo "[INFO] Starting clean PathMNIST FedAvg run"
-echo "[INFO] RUN_TAG=${RUN_TAG}, epochs=${EPOCHS}, participants=${TOTAL_PARTICIPANTS}, committee=${COMMITTEE_SIZE}, no_models=${NO_MODELS}, lr=${LR}, eta=${LR_ETA}, noniid=${NONIID_MODE}"
+echo "[INFO] RUN_TAG=${RUN_TAG}, epochs=${EPOCHS}, participants=${TOTAL_PARTICIPANTS}, committee=${COMMITTEE_SIZE}, no_models=${NO_MODELS}, lr=${LR}, eta=${LR_ETA}, noniid=${NONIID_MODE}, internal_epochs=${INTERNAL_EPOCHS}"
 
 cmd=(
   python main.py
@@ -43,6 +44,7 @@ cmd=(
   --committee_size="${COMMITTEE_SIZE}"
   --noniid="${NONIID_MODE}"
   --eta="${LR_ETA}"
+  --internal_epochs="${INTERNAL_EPOCHS}"
   --minimize_logging=false
   --seed="${SEED}"
   --"${RUN_TAG}"
