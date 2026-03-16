@@ -93,6 +93,7 @@ no_ensemble: false
 
 {% if get_aggregation_methods(aggregation_methods) == 'fedcsap' %}
 fedcsap_bottom_q: {{ fedcsap_bottom_q|default(0.2) }}
+fedcsap_committee_takeover_attack: {{ fedcsap_committee_takeover_attack|default('false') }}
 validation_metric_options:
   - f1
 validation_metric: {{ validation_metric|default('f1') }}

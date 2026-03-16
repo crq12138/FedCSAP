@@ -88,6 +88,17 @@ def get_param_for_context(context=None):
 
 
 
+
+
+def _is_enabled(value):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
 def configure_run_logging(run_name):
     run_folder = os.path.join('runs', run_name)
     os.makedirs(run_folder, exist_ok=True)
@@ -175,10 +186,16 @@ def run(params_loaded):
         committee_members = helper.elect_committee(epoch)
         committee_set = set(committee_members)
         committee_malicious_count = len([m for m in committee_members if m in helper.adversarial_namelist])
+        committee_takeover = committee_malicious_count > (len(committee_members) / 2.0) if len(committee_members) > 0 else False
+        committee_takeover_attack_triggered = committee_takeover and _is_enabled(
+            helper.params.get('fedcsap_committee_takeover_attack', False)
+        )
         helper.experiment_logger.log_fedcsap_round_metrics(
             epoch=epoch,
             committee_size=len(committee_members),
             committee_malicious_count=committee_malicious_count,
+            committee_takeover=committee_takeover,
+            committee_takeover_attack_triggered=committee_takeover_attack_triggered,
         )
         agent_name_keys = []
         adversarial_name_keys = []

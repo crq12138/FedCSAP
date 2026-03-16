@@ -43,7 +43,7 @@ class ExperimentLogger:
             writer = csv.writer(f)
             writer.writerow([
                 'epoch', 'committee_size', 'committee_malicious_count',
-                'committee_mal_ratio', 'committee_takeover'
+                'committee_mal_ratio', 'committee_takeover', 'committee_takeover_attack_triggered'
             ])
 
         with open(self.fedcsap_class_delta_f1_path, 'w', newline='') as f:
@@ -55,15 +55,30 @@ class ExperimentLogger:
             writer = csv.writer(f)
             writer.writerow([epoch, global_acc, global_macro_f1])
 
-    def log_fedcsap_round_metrics(self, epoch, committee_size, committee_malicious_count):
+    def log_fedcsap_round_metrics(
+        self,
+        epoch,
+        committee_size,
+        committee_malicious_count,
+        committee_takeover=None,
+        committee_takeover_attack_triggered=None,
+    ):
         committee_size = int(committee_size)
         committee_malicious_count = int(committee_malicious_count)
         committee_mal_ratio = (committee_malicious_count / committee_size) if committee_size > 0 else 0.0
-        committee_takeover = 1 if committee_malicious_count > (committee_size / 2.0) else 0
+        if committee_takeover is None:
+            committee_takeover = committee_malicious_count > (committee_size / 2.0)
+        if committee_takeover_attack_triggered is None:
+            committee_takeover_attack_triggered = committee_takeover
         with open(self.fedcsap_round_metrics_path, 'a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([
-                epoch, committee_size, committee_malicious_count, committee_mal_ratio, committee_takeover
+                epoch,
+                committee_size,
+                committee_malicious_count,
+                committee_mal_ratio,
+                int(bool(committee_takeover)),
+                int(bool(committee_takeover_attack_triggered)),
             ])
 
     def log_fedcsap_client_metrics(
