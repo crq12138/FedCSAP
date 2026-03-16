@@ -40,6 +40,10 @@ Do participants change each round?
 - The global participant pool (IDs) is fixed for a run.
 - Committee members and training clients are re-sampled each epoch, so the active set usually changes round by round.
 
+For `fedcsap`, you can enable committee takeover attack simulation with:
+- `--fedcsap_committee_takeover_attack=true`
+- Default is off (`false`) in `utils/jinja.yaml`.
+
 Different scenarios require different parameters which is listed in `utils/jinja.yaml`
 Some of them are changable from the command line, for example adding `--noniid=one_class_expert` will run the experiment with one class expert data distribution.
 

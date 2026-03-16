@@ -12,6 +12,16 @@ from fedcsap_utils.validation_test import validation_test
 logger = logging.getLogger('logger')
 
 
+def _is_enabled(value):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+
 def _compute_cvar_bottom_q_mean(delta_f1_by_class, bottom_q):
     scores = np.array(delta_f1_by_class, dtype=np.float32)
     if scores.size == 0:
@@ -260,6 +270,23 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
 
     aggregate_weights = helper.weighted_average_oracle(sanitized_delta_models, torch.tensor(weight_vec))
 
+    committee_takeover_attack = _is_enabled(helper.params.get('fedcsap_committee_takeover_attack', False))
+    committee_takeover = False
+    if committee_takeover_attack and committee_members is not None:
+        committee_size = len(committee_members)
+        if committee_size > 0:
+            committee_malicious_count = len([m for m in committee_members if m in helper.adversarial_namelist])
+            committee_takeover = committee_malicious_count > (committee_size / 2.0)
+
+    if committee_takeover:
+        aggregate_weights = _scale_update_dict(aggregate_weights, -1.0)
+        logger.warning(
+            'fedcsap epoch %s: committee takeover attack triggered (%s/%s malicious); reversing aggregate update direction.',
+            epoch,
+            committee_malicious_count,
+            committee_size,
+        )
+
     positive_norms = norms[norms > 0]
     median_client_norm = float(np.median(positive_norms)) if positive_norms.size > 0 else 0.0
     agg_flat = np.array(helper.flatten_gradient_v2(aggregate_weights), dtype=np.float64)
@@ -286,12 +313,13 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
             layer_data.add_(update_per_layer.to(layer_data.dtype))
 
     logger.info(
-        'fedcsap epoch %s: validators=%s, rep_scores=%s, selected_clients=%s, low_cluster_clients=%s, elapsed=%.2fs',
+        'fedcsap epoch %s: validators=%s, rep_scores=%s, selected_clients=%s, low_cluster_clients=%s, committee_takeover=%s, elapsed=%.2fs',
         epoch,
         validators,
         [round(s, 6) for s in representative_scores],
         selected_clients,
         low_cluster_clients,
+        committee_takeover,
         time.time() - start,
     )
 
@@ -322,3 +350,4 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         helper.result_dict['fedcsap_rep_scores'].append(representative_scores)
         helper.result_dict['fedcsap_selected_clients'].append(selected_clients)
         helper.result_dict['fedcsap_low_cluster_clients'].append(low_cluster_clients)
+        helper.result_dict['fedcsap_committee_takeover'].append(bool(committee_takeover))
