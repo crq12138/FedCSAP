@@ -72,6 +72,7 @@ start_run() {
   local mal_pcnt="$4"
   local aggregation_method="$5"
   local adversary_count="$6"
+  local dirichlet_alpha="$7"
 
   local cmd=(
     python main.py
@@ -87,7 +88,7 @@ start_run() {
     --committee_size=5
     --no_models=20
     --noniid=sampling_dirichlet
-    --dirichlet_alpha=0.9
+    --dirichlet_alpha="${dirichlet_alpha}"
     --eta=0.1
     --fedcsap_bottom_q=0.2
     --committee_election=reputation
@@ -114,7 +115,7 @@ group_index=1
 jobs_in_group=0
 selected_count=0
 
-while IFS=, read -r run_tag type attack_method mal_pcnt aggregation_method; do
+while IFS=, read -r run_tag type attack_method mal_pcnt aggregation_method dirichlet_alpha; do
   # skip header
   if [[ "${run_tag}" == "run_tag" ]]; then
     continue
@@ -126,12 +127,13 @@ while IFS=, read -r run_tag type attack_method mal_pcnt aggregation_method; do
   fi
 
   adversary_count=$(adversary_count_for_level "${mal_pcnt}")
+  dirichlet_alpha=${dirichlet_alpha:-0.9}
 
   if (( jobs_in_group == 0 )); then
     echo "===== Group ${group_index} started (max parallel: ${MAX_PARALLEL}) ====="
   fi
 
-  start_run "${run_tag}" "${type}" "${attack_method}" "${mal_pcnt}" "${aggregation_method}" "${adversary_count}"
+  start_run "${run_tag}" "${type}" "${attack_method}" "${mal_pcnt}" "${aggregation_method}" "${adversary_count}" "${dirichlet_alpha}"
   selected_count=$((selected_count + 1))
   jobs_in_group=$((jobs_in_group + 1))
 
