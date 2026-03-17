@@ -1,25 +1,18 @@
 # Standalone Federated Learning System (from scratch)
 
-这是一个**完全独立于仓库现有训练代码**的新实现，代码全部位于 `test/fl_system/`。
+这是一个**完全独立于仓库现有训练代码**的新实现，代码全部位于 `test_fl/fl_system/`。
 
-## 满足需求
+## 当前能力
 
 1. 客户端数量固定为 20（`--num-clients` 必须等于 20）。
-2. 训练参数参考 `scripts/exp_04_cifar10.sh` 中 run_057 所使用的参数（可映射部分）：
-   - rounds=200（对应 epochs=200）
-   - clients=20（对应 no_models=20）
-   - total_participants=25
-   - committee_size=5
-   - noniid=sampling_dirichlet
-   - dirichlet_alpha=0.9
-   - lr=0.1（对应 jinja 的本地学习率）
-   - eta=0.1（对应全局模型更新步长）
-   - momentum=0.9, decay=0.0005
-   - local_epochs=2（对应 cifar 的 internal_epochs=2）
-   - seed=0
-   - 攻击默认 sf，恶意比例默认 0.3
-3. 支持 CIFAR10、MNIST 与 PATHMNIST，支持 clean 与 SF 攻击模式。
-4. 聚合器当前为 FedAvg，并通过注册表预留扩展点。
+2. 支持 CIFAR10 / MNIST / PATHMNIST。
+3. CIFAR10 对齐主系统 FEDCSAP：
+   - 数据目录默认 `./data`（与主系统一致）
+   - 模型使用 `ResNet18`
+   - 训练超参默认值保持一致：`lr=0.1, momentum=0.9, weight_decay=5e-4, local_epochs=2`
+4. 聚合支持 `fedavg` 与 `fedcsap`（test_fl 中的 fedcsap 复用聚合核，并在 server 侧实现 FEDCSAP 扩展逻辑）。
+5. 新增可控高斯噪声：`--gaussian-noise-std`。
+6. 新增 FEDCSAP 混合更新：`--fedcsap-hybrid-alpha`。
 
 ## 依赖
 
@@ -34,29 +27,31 @@ pip install torch torchvision medmnist
 
 ## 运行
 
-### CIFAR10（clean）
+### CIFAR10（FEDCSAP + 混合更新 + 高斯噪声）
 
 ```bash
-python -m test.fl_system.main \
+python -m test_fl.fl_system.main \
   --dataset cifar10 \
-  --attack none \
-  --aggregation fedavg
+  --aggregation fedcsap \
+  --fedcsap-hybrid-alpha 0.5 \
+  --gaussian-noise-std 0.001 \
+  --attack sf \
+  --mal-pcnt 0.3
 ```
 
-### CIFAR10（SF 攻击）
+### CIFAR10（clean, FedAvg）
 
 ```bash
-python -m test.fl_system.main \
+python -m test_fl.fl_system.main \
   --dataset cifar10 \
-  --attack sf \
-  --mal-pcnt 0.3 \
+  --attack none \
   --aggregation fedavg
 ```
 
 ### PATHMNIST（clean）
 
 ```bash
-python -m test.fl_system.main \
+python -m test_fl.fl_system.main \
   --dataset pathmnist \
   --attack none \
   --aggregation fedavg
@@ -65,29 +60,22 @@ python -m test.fl_system.main \
 ### MNIST（clean）
 
 ```bash
-python -m test.fl_system.main \
+python -m test_fl.fl_system.main \
   --dataset mnist \
   --attack none \
-  --aggregation fedavg
-```
-
-### PATHMNIST（SF 攻击）
-
-```bash
-python -m test.fl_system.main \
-  --dataset pathmnist \
-  --attack sf \
-  --mal-pcnt 0.3 \
   --aggregation fedavg
 ```
 
 ## 快速冒烟测试（降低数据量）
 
 ```bash
-python -m test.fl_system.main \
-  --dataset cifar10 \
+python -m test_fl.fl_system.main \
+  --dataset mnist \
   --rounds 1 \
   --attack none \
+  --aggregation fedcsap \
+  --fedcsap-hybrid-alpha 0.7 \
+  --gaussian-noise-std 0.0001 \
   --max-train-samples-per-client 32 \
   --max-test-samples 128
 ```
