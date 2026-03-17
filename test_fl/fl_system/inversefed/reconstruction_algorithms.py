@@ -64,7 +64,11 @@ class GradientReconstructor():
         start_time = time.time()
         if eval:
             self.model.eval()
-
+        input_data = [
+            g.to(device=self.setup['device'], dtype=self.setup['dtype']) if g.is_floating_point()
+            else g.to(device=self.setup['device'])
+            for g in input_data
+        ]
 
         stats = defaultdict(list)
         x = self._init_images(img_shape)
@@ -74,7 +78,7 @@ class GradientReconstructor():
             if self.num_images == 1 and self.iDLG:
                 # iDLG trick:
                 last_weight_min = torch.argmin(torch.sum(input_data[-2], dim=-1), dim=-1)
-                labels = last_weight_min.detach().reshape((1,)).requires_grad_(False)
+                labels = last_weight_min.detach().reshape((1,)).to(self.setup['device']).requires_grad_(False)
                 self.reconstruct_label = False
             else:
                 # DLG label recovery
@@ -87,6 +91,7 @@ class GradientReconstructor():
                 self.loss_fn = loss_fn
         else:
             assert labels.shape[0] == self.num_images
+            labels = labels.to(self.setup['device'])
             self.reconstruct_label = False
 
         try:
@@ -129,6 +134,8 @@ class GradientReconstructor():
 
     def _run_trial(self, x_trial, input_data, labels, dryrun=False):
         x_trial.requires_grad = True
+        if torch.is_tensor(labels):
+            labels = labels.to(self.setup['device'])
         if self.reconstruct_label:
             output_test = self.model(x_trial)
             labels = torch.randn(output_test.shape[1]).to(**self.setup).requires_grad_(True)
@@ -370,19 +377,20 @@ def reconstruction_costs(gradients, input_gradient, cost_fn='l2', indices='def',
         if indices == 'topk-2':
             _, indices = torch.topk(torch.stack([p.norm().detach() for p in trial_gradient], dim=0), 4)
         for i in indices:
+            input_i = input_gradient[i].to(device=trial_gradient[i].device, dtype=trial_gradient[i].dtype)
             if cost_fn == 'l2':
-                costs += ((trial_gradient[i] - input_gradient[i]).pow(2)).sum() * weights[i]
+                costs += ((trial_gradient[i] - input_i).pow(2)).sum() * weights[i]
             elif cost_fn == 'l1':
-                costs += ((trial_gradient[i] - input_gradient[i]).abs()).sum() * weights[i]
+                costs += ((trial_gradient[i] - input_i).abs()).sum() * weights[i]
             elif cost_fn == 'max':
-                costs += ((trial_gradient[i] - input_gradient[i]).abs()).max() * weights[i]
+                costs += ((trial_gradient[i] - input_i).abs()).max() * weights[i]
             elif cost_fn == 'sim':
-                costs -= (trial_gradient[i] * input_gradient[i]).sum() * weights[i]
+                costs -= (trial_gradient[i] * input_i).sum() * weights[i]
                 pnorm[0] += trial_gradient[i].pow(2).sum() * weights[i]
-                pnorm[1] += input_gradient[i].pow(2).sum() * weights[i]
+                pnorm[1] += input_i.pow(2).sum() * weights[i]
             elif cost_fn == 'simlocal':
                 costs += 1 - torch.nn.functional.cosine_similarity(trial_gradient[i].flatten(),
-                                                                   input_gradient[i].flatten(),
+                                                                   input_i.flatten(),
                                                                    0, 1e-10) * weights[i]
         if cost_fn == 'sim':
             costs = 1 + costs / pnorm[0].sqrt() / pnorm[1].sqrt()
