@@ -27,7 +27,13 @@ class FLConfig:
     mal_pcnt: float = 0.3
 
     # 聚合设置
-    aggregation: str = "fedavg"
+    aggregation: str = "fedavg"  # fedavg | fedcsap
+
+    # FEDCSAP 扩展：混合更新（global <- (1-alpha)*global + alpha*agg）
+    fedcsap_hybrid_alpha: float = 1.0
+
+    # 高斯加噪（对聚合后的权重进行噪声注入）
+    gaussian_noise_std: float = 0.0
 
     # 快速调试
     max_train_samples_per_client: Optional[int] = None

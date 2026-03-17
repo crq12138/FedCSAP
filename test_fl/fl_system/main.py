@@ -9,7 +9,7 @@ import torch
 from .client import FLClient
 from .config import FLConfig
 from .datasets import build_client_loaders, build_test_loader, load_dataset
-from .model import SmallCNN
+from .model import build_model
 from .server import FLServer
 
 
@@ -26,7 +26,11 @@ def parse_args():
     p.add_argument("--momentum", type=float, default=0.9)
     p.add_argument("--weight-decay", type=float, default=5e-4)
     p.add_argument("--local-epochs", type=int, default=2)
-    p.add_argument("--aggregation", default="fedavg")
+    p.add_argument("--aggregation", choices=["fedavg", "fedcsap"], default="fedavg")
+    p.add_argument("--fedcsap-hybrid-alpha", type=float, default=1.0,
+                   help="Hybrid update strength for FEDCSAP in (0,1]. 1.0 means pure aggregated update.")
+    p.add_argument("--gaussian-noise-std", type=float, default=0.0,
+                   help="Std of Gaussian noise added to aggregated model parameters.")
     p.add_argument("--attack", choices=["none", "sf"], default="sf")
     p.add_argument("--mal-pcnt", type=float, default=0.3)
     p.add_argument("--seed", type=int, default=0)
@@ -69,6 +73,8 @@ def main():
         aggregation=args.aggregation,
         attack=args.attack,
         mal_pcnt=args.mal_pcnt,
+        fedcsap_hybrid_alpha=args.fedcsap_hybrid_alpha,
+        gaussian_noise_std=args.gaussian_noise_std,
         seed=args.seed,
         device=resolve_device(args.device),
         max_train_samples_per_client=args.max_train_samples_per_client,
@@ -93,11 +99,12 @@ def main():
     test_loader = build_test_loader(test_ds, cfg.batch_size, cfg.max_test_samples)
 
     clients = [FLClient(i, loader, cfg.device) for i, loader in enumerate(client_loaders)]
-    model = SmallCNN(num_classes=num_classes, in_channels=in_channels)
+    model = build_model(cfg.dataset, num_classes=num_classes, in_channels=in_channels)
 
     print(
         f"Start FL: dataset={cfg.dataset}, clients={cfg.num_clients}, rounds={cfg.rounds}, "
-        f"attack={cfg.attack}, mal_pcnt={cfg.mal_pcnt}, aggregation={cfg.aggregation}, device={cfg.device}"
+        f"attack={cfg.attack}, mal_pcnt={cfg.mal_pcnt}, aggregation={cfg.aggregation}, "
+        f"hybrid_alpha={cfg.fedcsap_hybrid_alpha}, noise_std={cfg.gaussian_noise_std}, device={cfg.device}"
     )
 
     server = FLServer(model=model, clients=clients, test_loader=test_loader, cfg=cfg)

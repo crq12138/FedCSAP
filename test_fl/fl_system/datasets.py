@@ -39,9 +39,9 @@ def load_dataset(name: str, data_dir: str):
     data_root.mkdir(parents=True, exist_ok=True)
 
     if name == "cifar10":
+        # 与主系统 image_helper 保持一致：CIFAR10 默认仅 ToTensor
         transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
         ])
         train_ds = datasets.CIFAR10(root=str(data_root), train=True, download=True, transform=transform)
         test_ds = datasets.CIFAR10(root=str(data_root), train=False, download=True, transform=transform)

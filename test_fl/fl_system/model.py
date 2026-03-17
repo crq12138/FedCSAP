@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import torch
 from torch import nn
+
+from models.resnet_cifar import ResNet18
 
 
 class SmallCNN(nn.Module):
@@ -22,3 +26,11 @@ class SmallCNN(nn.Module):
         x = self.features(x)
         x = x.flatten(1)
         return self.classifier(x)
+
+
+def build_model(dataset: str, num_classes: int, in_channels: int) -> nn.Module:
+    """Build model with CIFAR10 configuration aligned to the main FEDCSAP system."""
+    if dataset.lower() == "cifar10":
+        # 与主系统保持一致：CIFAR10 使用 ResNet18
+        return ResNet18(name="Target")
+    return SmallCNN(num_classes=num_classes, in_channels=in_channels)

@@ -20,6 +20,29 @@ class FLServer:
         mal_count = int(len(clients) * cfg.mal_pcnt)
         self.malicious_set = set(rng.sample(range(len(clients)), mal_count))
 
+    @staticmethod
+    def _apply_gaussian_noise(state: dict, noise_std: float) -> dict:
+        if noise_std <= 0:
+            return state
+        noised_state = {}
+        for k, v in state.items():
+            if torch.is_floating_point(v):
+                noised_state[k] = v + torch.randn_like(v) * noise_std
+            else:
+                noised_state[k] = v
+        return noised_state
+
+    @staticmethod
+    def _hybrid_update(global_state: dict, agg_state: dict, alpha: float) -> dict:
+        if not 0.0 < alpha <= 1.0:
+            raise ValueError("fedcsap_hybrid_alpha must be in (0, 1].")
+        if alpha == 1.0:
+            return agg_state
+        out = {}
+        for k, global_tensor in global_state.items():
+            out[k] = global_tensor + alpha * (agg_state[k] - global_tensor)
+        return out
+
     def train(self):
         for rnd in range(1, self.cfg.rounds + 1):
             client_states = []
@@ -45,15 +68,16 @@ class FLServer:
                 client_weights.append(weight)
 
             avg_state = self.aggregator.aggregate(client_states, client_weights)
-            self.model.load_state_dict(avg_state)
-            # eta = float(self.cfg.eta)
-            # if not 0.0 < eta <= 1.0:
-            #     raise ValueError("eta must be in (0, 1].")
 
-            # blended_state = {}
-            # for k, global_tensor in self.model.state_dict().items():
-            #     blended_state[k] = global_tensor.detach().cpu() + eta * (avg_state[k] - global_tensor.detach().cpu())
-            # self.model.load_state_dict(blended_state)
+            # FEDCSAP 混合更新：global <- (1-alpha)*global + alpha*aggregate
+            if self.cfg.aggregation == "fedcsap":
+                next_state = self._hybrid_update(global_state, avg_state, self.cfg.fedcsap_hybrid_alpha)
+            else:
+                next_state = avg_state
+
+            # 可选高斯加噪
+            next_state = self._apply_gaussian_noise(next_state, self.cfg.gaussian_noise_std)
+            self.model.load_state_dict(next_state)
 
             acc = self.evaluate()
             print(f"[Round {rnd:03d}/{self.cfg.rounds}] test_acc={acc:.4f}")
