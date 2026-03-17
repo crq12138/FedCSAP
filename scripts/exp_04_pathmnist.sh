@@ -81,7 +81,7 @@ start_run() {
     --"number_of_adversary_${attack_method}"="${adversary_count}"
     --mal_pcnt="${mal_pcnt}"
     --resumed_model=false
-    --epochs=200
+    --epochs=150
     --number_of_total_participants=25
     --committee_size=5
     --no_models=20

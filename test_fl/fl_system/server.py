@@ -7,6 +7,10 @@ import torch
 from .aggregators import build_aggregator
 from .client import FLClient
 
+from .inversefed.reconstruction_algorithms import GradientReconstructor
+import torchvision
+import os
+
 
 class FLServer:
     def __init__(self, model, clients: list[FLClient], test_loader, cfg):
@@ -44,12 +48,16 @@ class FLServer:
         return out
 
     def train(self):
+
         for rnd in range(1, self.cfg.rounds + 1):
             client_states = []
             client_weights = []
+            
+            # 记录本轮全局状态
             global_state = {
                 k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()
             }
+            
             for c in self.clients:
                 state, weight = c.local_train(
                     self.model,
@@ -67,17 +75,75 @@ class FLServer:
                 client_states.append(attacked)
                 client_weights.append(weight)
 
+            # 聚合与防御阶段
+            print("进入聚合阶段")
             avg_state = self.aggregator.aggregate(client_states, client_weights)
 
-            # FEDCSAP 混合更新：global <- (1-alpha)*global + alpha*aggregate
             if self.cfg.aggregation == "fedcsap":
+                print("进入fedcsap阶段")
                 next_state = self._hybrid_update(global_state, avg_state, self.cfg.fedcsap_hybrid_alpha)
             else:
                 next_state = avg_state
 
-            # 可选高斯加噪
             next_state = self._apply_gaussian_noise(next_state, self.cfg.gaussian_noise_std)
             self.model.load_state_dict(next_state)
+
+            # ==========================================
+            # 🚀 隐私窃取：梯度反转攻击 (基线验证模式)
+            # ==========================================
+            # 仅在第一轮执行攻击，以验证初始阶段的隐私泄漏情况
+            if rnd == 1:
+                target_client_idx = 0
+                target_state = client_states[target_client_idx]
+                pseudo_gradient = []
+                
+                # 提取目标客户端防御后的等效梯度
+                alpha = self.cfg.fedcsap_hybrid_alpha if self.cfg.aggregation == "fedcsap" else 1.0
+                noise_std = self.cfg.gaussian_noise_std
+                
+                for k in global_state.keys():
+                    # 模拟窃听者计算：防御衰减与噪声叠加
+                    grad_tensor = global_state[k] - target_state[k]
+                    grad_tensor = alpha * grad_tensor
+                    if noise_std > 0:
+                        grad_tensor += torch.randn_like(grad_tensor) * noise_std
+                    pseudo_gradient.append(grad_tensor.to(self.cfg.device))
+
+                # CIFAR-10 数据集统计特征 (需与 datasets.py 中 Normalize 一致)
+                dm = torch.as_tensor([0.4914, 0.4822, 0.4465], device=self.cfg.device)[:, None, None]
+                ds = torch.as_tensor([0.2023, 0.1994, 0.2010], device=self.cfg.device)[:, None, None]
+
+                # 优化器配置：使用余弦相似度损失，针对小 Batch Size 进行 L-BFGS 或 Adam 优化
+                config = dict(signed=True,
+                              cost_fn='sim', 
+                              indices='def', 
+                              weights='equal',
+                              lr=0.1, 
+                              optim='adam', 
+                              restarts=2,          # 基线测试可设为 2 提高稳定性
+                              max_iterations=4800, 
+                              total_variation=1e-1,
+                              init='randn',
+                              filter='none',
+                              lr_decay=True,
+                              scoring_choice='loss')
+
+                print(f"\n[*] 正在对 Client {self.clients[target_client_idx].client_id} 执行梯度反转攻击 (Baseline)...")
+                print(f"[*] 参数配置: Batch Size={self.cfg.batch_size}, Alpha={alpha}, Noise={noise_std}")
+                
+                # 设置重建的图像数量严格等于 batch_size
+                rec_machine = GradientReconstructor(self.model, (dm, ds), config, num_images=self.cfg.batch_size)
+                
+                # 执行重建计算
+                output, stats = rec_machine.reconstruct(pseudo_gradient, None, img_shape=(3, 32, 32))
+                
+                # 确保存储目录存在并保存图像
+                os.makedirs("attack_results", exist_ok=True)
+                save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}.png"
+                torchvision.utils.save_image(output, save_path, nrow=int(self.cfg.batch_size**0.5))
+                
+                print(f"[*] 攻击完成，图像已保存至 {save_path}。最优损失: {stats['opt']: .4f}\n")
+            # ==========================================
 
             acc = self.evaluate()
             print(f"[Round {rnd:03d}/{self.cfg.rounds}] test_acc={acc:.4f}")
