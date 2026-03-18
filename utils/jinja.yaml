@@ -4,6 +4,7 @@
 {% macro get_noniid(noniid) %}{% if noniid is defined %}{{ noniid }}{% else %}iid{% endif %}{% endmacro %}
 
 gpu: {{ gpu|default('0') }}
+seed: {{ seed|default(1) }}
 type: {{ type|default('cifar') }}
 test_batch_size: 64
 {% if get_type(type) != 'loan' %}

@@ -22,7 +22,7 @@ import copy
 import random
 import utils.csv_record
 
-from utils.utils import get_hash_from_param_file
+from utils.utils import get_hash_from_param_file, seed_from
 # import train
 # import test
 
@@ -200,7 +200,7 @@ class Helper:
 
         committee_election = str(self.params.get('committee_election', 'reputation')).lower()
         if committee_election == 'random':
-            rng = random.Random(0 + int(epoch))
+            rng = random.Random(seed_from(self.params['seed'], 'committee_election_random', epoch))
             self.current_committee = rng.sample(self.participants_list, committee_size)
             logger.info(f'Random committee election at epoch {epoch}: {self.current_committee}')
             return self.current_committee
@@ -280,7 +280,7 @@ class Helper:
             sample_size = max(1, int(pool_size * float(sample_ratio)))
 
         sample_size = min(int(sample_size), pool_size)
-        sampler_rng = random.Random(271828 + epoch)
+        sampler_rng = random.Random(seed_from(self.params['seed'], 'committee_validation_sampling', epoch))
         sampled_indices = sampler_rng.sample(range(pool_size), sample_size)
 
         sampled_dataset = Subset(self.public_validation_pool, sampled_indices)
