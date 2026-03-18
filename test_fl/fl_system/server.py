@@ -96,22 +96,28 @@ class FLServer:
                 target_client_idx = 0
                 target_state = client_states[target_client_idx]
                 pseudo_gradient = []
-                
+                # 确保 inversefed 的模型、伪梯度和标准化统计量处于同一设备
+                self.model.to(self.cfg.device)
+                attack_device = next(self.model.parameters()).device
                 # 提取目标客户端防御后的等效梯度
                 alpha = self.cfg.fedcsap_hybrid_alpha if self.cfg.aggregation == "fedcsap" else 1.0
                 noise_std = self.cfg.gaussian_noise_std
-                
-                for k in global_state.keys():
+                for name, _ in self.model.named_parameters():
+                    # 仅使用可训练参数来构造梯度，顺序必须与 model.parameters() 一致；
+                    # 否则会与 inversefed 内部 autograd 梯度列表错位，触发 shape mismatch。
+                    global_param = global_state[name]
+                    client_param = target_state[name]
                     # 模拟窃听者计算：防御衰减与噪声叠加
-                    grad_tensor = global_state[k] - target_state[k]
+                    grad_tensor = global_param - client_param
+                    grad_tensor = global_param - client_param
                     grad_tensor = alpha * grad_tensor
                     if noise_std > 0:
                         grad_tensor += torch.randn_like(grad_tensor) * noise_std
-                    pseudo_gradient.append(grad_tensor.to(self.cfg.device))
+                    pseudo_gradient.append(grad_tensor.to(attack_device))
 
                 # CIFAR-10 数据集统计特征 (需与 datasets.py 中 Normalize 一致)
-                dm = torch.as_tensor([0.4914, 0.4822, 0.4465], device=self.cfg.device)[:, None, None]
-                ds = torch.as_tensor([0.2023, 0.1994, 0.2010], device=self.cfg.device)[:, None, None]
+                dm = torch.as_tensor([0.4914, 0.4822, 0.4465], device=attack_device)[:, None, None]
+                ds = torch.as_tensor([0.2023, 0.1994, 0.2010], device=attack_device)[:, None, None]
 
                 # 优化器配置：使用余弦相似度损失，针对小 Batch Size 进行 L-BFGS 或 Adam 优化
                 config = dict(signed=True,

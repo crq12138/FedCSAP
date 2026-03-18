@@ -19,7 +19,7 @@ class FLConfig:
     # eta: float = 0.1  # 对应系统参数 eta（服务器端全局更新步长）
     momentum: float = 0.9
     weight_decay: float = 5e-4
-    local_epochs: int = 2  # 对应 cifar 场景 internal_epochs=2
+    local_epochs: int = 1  # 对应 cifar 场景 internal_epochs=2
     seed: int = 0
 
     # 攻击设置
