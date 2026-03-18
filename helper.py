@@ -460,7 +460,7 @@ class Helper:
                  number of training samples corresponding to the update, and update
                  is a list of variable weights
          """
-        if self.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_FEDCSAP, config.AGGR_AFA, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
+        if self.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_FEDCSAP, config.AGGR_AFA, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_MEDIAN, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
             updates = dict()
             for i in range(0, len(state_keys)):
                 local_model_gradients = epochs_submit_update_dict[state_keys[i]][0][0] # agg 1 interval
