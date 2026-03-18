@@ -63,6 +63,28 @@ import pickle
 import hashlib
 
 
+def _sanitize_numpy_vectors(vectors, context, client_names=None, logger_obj=None):
+    """
+    Replace NaN/Inf in 1D/2D numpy-like vectors with finite zeros.
+    Returns a float32 numpy array.
+    """
+    arr = np.asarray(vectors, dtype=np.float32)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+
+    non_finite_rows = np.where(~np.isfinite(arr).all(axis=1))[0]
+    if non_finite_rows.size > 0 and logger_obj is not None:
+        for ridx in non_finite_rows:
+            cname = None
+            if client_names is not None and ridx < len(client_names):
+                cname = client_names[ridx]
+            name_desc = f'client {cname}' if cname is not None else f'row {ridx}'
+            logger_obj.warning(
+                f'Non-finite values detected in {context} ({name_desc}); replacing NaN/Inf with 0.0.'
+            )
+    return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+
 class Helper:
     def __init__(self, current_time, params, name):
         self.current_time = current_time
@@ -688,6 +710,8 @@ class Helper:
         wv = np.zeros(len(names), dtype=np.float32)
         # grads = [self.flatten_gradient(client_grad) for client_grad in client_grads]
         grads = [self.flatten_gradient_v2(delta_model) for delta_model in delta_models]
+        grads = _sanitize_numpy_vectors(grads, 'flshield gradients', client_names=names, logger_obj=logger)
+
         norms = [np.linalg.norm(grad) for grad in grads]
         full_grads = copy.deepcopy(grads)
 
@@ -803,7 +827,13 @@ class Helper:
                     trust_scores[i] = max(trust_scores[i], 0)
 
                 norm_ref = norms[self.clusters_agg[idx][0]]
-                clip_vals = [min(norm_ref/norm, 1) for norm in norms]
+                if norm_ref == 0:
+                    norm_ref = 1e-12
+
+                clip_vals = []
+                for norm in norms:
+                    safe_norm = norm if norm > 0 else 1e-12
+                    clip_vals.append(min(norm_ref/safe_norm, 1))
                 trust_scores = [ts * cv for ts, cv in zip(trust_scores, clip_vals)]
                 weight_vec = trust_scores
 
@@ -814,10 +844,20 @@ class Helper:
                 # weight_vec = [min(1, elem * contrib_adjustment) for elem in weight_vec]
                 weight_vec[idx] = 1
                 others_contrib = sum([weight_vec[i] for i in range(len(weight_vec)) if i != idx])
+                if others_contrib <= 0:
+                    others_contrib = 1e-12
+
                 weight_vec = [elem * contrib_adjustment/others_contrib for elem in weight_vec]
                 weight_vec[idx] = 1 - contrib_adjustment
                 # logger.info(f'weight_vec: {weight_vec}')
-                weight_vec = weight_vec / np.sum(weight_vec)
+                weight_vec = np.array(weight_vec, dtype=np.float32)
+                weight_vec = np.nan_to_num(weight_vec, nan=0.0, posinf=0.0, neginf=0.0)
+                w_sum = np.sum(weight_vec)
+                if w_sum <= 0:
+                    weight_vec = np.zeros(len(names), dtype=np.float32)
+                    weight_vec[idx] = 1.0
+                else:
+                    weight_vec = weight_vec / w_sum
                 others_contrib = sum([weight_vec[i] for i in range(len(weight_vec)) if i != idx])
                 num_of_other_contrib = len([weight_vec[i] for i in range(len(weight_vec)) if i != idx and weight_vec[i] > 0])
                 # logger.info(f'contribution amount: {others_contrib} from {num_of_other_contrib} clients, own contrib: {weight_vec[idx]}')
@@ -1042,6 +1082,7 @@ class Helper:
 
         # only for testing purpose
         grads = [self.flatten_gradient(client_grad) for client_grad in client_grads]
+        grads = _sanitize_numpy_vectors(grads, 'fltrust_with_grad gradients', client_names=names, logger_obj=logger)
         logger.info(f'grad shape: {grads[0].shape}')
         # grads = client_grads
         clean_server_grad = grads[-1]
@@ -1148,18 +1189,7 @@ class Helper:
         # only for testing purpose
         # grads = [self.flatten_gradient(client_grad) for client_grad in client_grads]
         grads = [self.flatten_gradient_v2(delta_model) for delta_model in delta_models]
-        sanitized_grads = []
-        for idx, grad in enumerate(grads):
-            if not np.isfinite(grad).all():
-                logger.warning(
-                    'Non-finite values detected in %s update (nan=%s, inf=%s); replacing with zeros before FLTrust cosine similarity.',
-                    names[idx],
-                    np.isnan(grad).sum(),
-                    np.isinf(grad).sum(),
-                )
-                grad = np.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)
-            sanitized_grads.append(grad)
-        grads = sanitized_grads
+        grads = _sanitize_numpy_vectors(grads, 'fltrust gradients', client_names=names, logger_obj=logger)
         logger.info(f'grad shape: {grads[0].shape}')
         # grads = client_grads
         clean_server_grad = grads[-1]
@@ -1532,7 +1562,10 @@ class Helper:
                 agg_grads.append(temp)
 
             grads = [self.flatten_gradient(client_grad) for cl_id, client_grad in enumerate(client_grads) if cl_id in good_set]
+            good_names = [names[cl_id] for cl_id in good_set]
+            grads = _sanitize_numpy_vectors(grads, 'afa gradients', client_names=good_names, logger_obj=logger)
             agg_grad_flat = self.flatten_gradient(agg_grads)
+            agg_grad_flat = np.nan_to_num(agg_grad_flat, nan=0.0, posinf=0.0, neginf=0.0)
             # cos_sims = np.array([cosine_similarity(client_grad, agg_grad_flat) for client_grad in grads])
             cos_sims = np.array(cosine_similarity(grads, [agg_grad_flat])).flatten()
             logger.info(f'cos_sims: {cos_sims}')
@@ -1992,6 +2025,7 @@ class FoolsGold(object):
         :return: compute similatiry and return weightings
         """
         n_clients = grads.shape[0]
+        grads = _sanitize_numpy_vectors(grads, 'foolsgold gradients', logger_obj=logger)
         cs = smp.cosine_similarity(grads) - np.eye(n_clients)
 
         maxcs = np.max(cs, axis=1)
