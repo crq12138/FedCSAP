@@ -60,6 +60,15 @@ epochs_for_run() {
   fi
 }
 
+
+prepare_run_folder() {
+  local run_tag="$1"
+  local run_folder="runs/${run_tag}"
+
+  rm -rf "${run_folder}"
+  mkdir -p "${run_folder}"
+}
+
 start_run() {
   local run_tag="$1"
   local type="$2"
@@ -103,6 +112,8 @@ start_run() {
     echo
     return 0
   fi
+
+  prepare_run_folder "${run_tag}"
 
   nohup "${cmd[@]}" > /dev/null 2>&1 &
   echo "Started ${run_tag}: type=${type}, attack=${attack_method}, mal_pcnt=${mal_pcnt}, aggregation=${aggregation_method}, epochs=${epochs}, pid=$!"
