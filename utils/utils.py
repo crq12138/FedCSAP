@@ -8,6 +8,24 @@ import hashlib
 import pickle
 import yaml
 
+def seed_from(base_seed, *components):
+    payload = f'{int(base_seed)}::' + '::'.join(str(c) for c in components)
+    digest = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+    return int(digest[:8], 16)
+
+def set_global_seeds(seed, deterministic=False):
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
 def dict_html(dict_obj, current_time):
     out = ''
     for key, value in dict_obj.items():
@@ -41,4 +59,3 @@ if __name__ == '__main__':
         param = yaml.safe_load(f)
 
     print(get_hash_from_param_file(param))
-

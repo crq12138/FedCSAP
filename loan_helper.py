@@ -23,6 +23,7 @@ import os
 
 
 import yaml
+from utils.utils import seed_from
 logger = logging.getLogger("logger")
 POISONED_PARTICIPANT_POS = 0
 
@@ -144,8 +145,12 @@ class LoanHelper(Helper):
                     self.feature_dict[helper.all_dataset.data_column_name[k]]=k
 
         if self.params['is_random_adversary']:
-            np.random.seed(42)
-            self.adversarial_namelist = np.random.choice(self.participants_list[:-1], self.params[f'number_of_adversary_{self.params["attack_methods"]}']).tolist()
+            rng = np.random.default_rng(seed_from(self.params['seed'], 'loan_adversarial_namelist'))
+            self.adversarial_namelist = rng.choice(
+                self.participants_list[:-1],
+                self.params[f'number_of_adversary_{self.params["attack_methods"]}'],
+                replace=False
+            ).tolist()
 
         # logger.info(f'Participants list: {self.participants_list}')
         # logger.info(f'Adversarial list: {self.adversarial_namelist}')
@@ -289,4 +294,3 @@ if __name__ == '__main__':
             count +=1
         print(state_keys[i], "train batch num",count)
         break
-

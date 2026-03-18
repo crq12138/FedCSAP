@@ -16,7 +16,7 @@ from torchvision import transforms
 from collections import defaultdict
 from loan_helper import LoanHelper
 from image_helper import ImageHelper
-from utils.utils import dict_html
+from utils.utils import dict_html, set_global_seeds, seed_from
 import utils.csv_record as csv_record
 from utils.experiment_logger import ExperimentLogger
 import yaml
@@ -35,9 +35,6 @@ logger = logging.getLogger("logger")
 logger.setLevel("ERROR")
 
 criterion = torch.nn.CrossEntropyLoss()
-torch.manual_seed(1)
-torch.cuda.manual_seed(1)
-random.seed(1)
 
 from jinja2 import Template
 import yaml
@@ -110,6 +107,8 @@ def configure_run_logging(run_name):
 
 def run(params_loaded):
     params_loaded = defaultdict(lambda: None, params_loaded)
+    params_loaded['seed'] = int(params_loaded.get('seed', 1))
+    set_global_seeds(params_loaded['seed'])
     params_loaded['aggregation_methods'] = config.normalize_aggregation_method(params_loaded['aggregation_methods'])
     params_loaded['attack_methods'] = config.normalize_attack_method(params_loaded['attack_methods'])
     print(f'gpu requested: {params_loaded["gpu"]}')
@@ -199,7 +198,7 @@ def run(params_loaded):
         )
         agent_name_keys = []
         adversarial_name_keys = []
-        random.seed(42+epoch)
+        round_rng = random.Random(seed_from(helper.params['seed'], 'round_client_selection', epoch))
         # if helper.params['is_random_adversary'] or helper.params['random_adversary_for_label_flip']:  # random choose , maybe don't have advasarial
         #     agent_name_keys = random.sample(helper.participants_list, helper.params['no_models'])
         #     for _name_keys in agent_name_keys:
@@ -219,7 +218,7 @@ def run(params_loaded):
         #             if helper.adversarial_namelist[idx] not in adversarial_name_keys:
         #                 adversarial_name_keys.append(helper.adversarial_namelist[idx])
         adv_num = min(adv_num, len(available_adversaries))
-        adversarial_name_keys = random.sample(available_adversaries, adv_num)
+        adversarial_name_keys = round_rng.sample(available_adversaries, adv_num)
 
         # nonattacker=[]
         # for adv in helper.adversarial_namelist:
@@ -233,21 +232,21 @@ def run(params_loaded):
             benign_num = helper.params['no_models'] - len(adversarial_name_keys) - (1 if trusted_node is not None else 0)
             available_fltrust_benign = [b for b in helper.benign_namelist[:-1] if b not in committee_set]
             benign_num = max(0, min(benign_num, len(available_fltrust_benign)))
-            random_agent_name_keys = random.sample(available_fltrust_benign, benign_num)
+            random_agent_name_keys = round_rng.sample(available_fltrust_benign, benign_num)
             agent_name_keys = adversarial_name_keys + random_agent_name_keys
             if trusted_node is not None:
                 agent_name_keys.append(trusted_node)
         else:
             benign_num = helper.params['no_models'] - len(adversarial_name_keys)
             benign_num = max(0, min(benign_num, len(available_benign)))
-            random_agent_name_keys = random.sample(available_benign, benign_num)
+            random_agent_name_keys = round_rng.sample(available_benign, benign_num)
             agent_name_keys = adversarial_name_keys + random_agent_name_keys
 
         if len(agent_name_keys) < helper.params['no_models']:
             remaining_candidates = [p for p in helper.participants_list if p not in committee_set and p not in set(agent_name_keys)]
             refill_num = min(helper.params['no_models'] - len(agent_name_keys), len(remaining_candidates))
             if refill_num > 0:
-                agent_name_keys.extend(random.sample(remaining_candidates, refill_num))
+                agent_name_keys.extend(round_rng.sample(remaining_candidates, refill_num))
         # else:
         #     if helper.params['is_random_adversary']==False:
         #         adversarial_name_keys=copy.deepcopy(helper.adversarial_namelist)
@@ -388,7 +387,6 @@ def run(params_loaded):
 
 if __name__ == '__main__':
     print('Start training')
-    np.random.seed(1)
     time_start_load_everything = time.time()
     parser = argparse.ArgumentParser(description='PPDL')
     parser.add_argument('--params', dest='params', default='utils/fmnist_params.yaml')

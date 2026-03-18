@@ -41,6 +41,7 @@ import json
 
 from tqdm import tqdm
 from collections import Counter
+from utils.utils import seed_from
 
 
 class PixelPattern(torch.nn.Module):
@@ -167,10 +168,10 @@ class ImageHelper(Helper):
         image_nums = []
         for n in range(no_classes):
             image_num = []
-            random.seed(42+n)
-            random.shuffle(cifar_classes[n])
-            np.random.seed(42+n)
-            sampled_probabilities = class_size * np.random.dirichlet(
+            class_rng = random.Random(seed_from(self.params['seed'], 'dirichlet_class_shuffle', n))
+            class_rng.shuffle(cifar_classes[n])
+            class_np_rng = np.random.default_rng(seed_from(self.params['seed'], 'dirichlet_class_distribution', n))
+            sampled_probabilities = class_size * class_np_rng.dirichlet(
                 np.array(no_participants * [alpha]))
             for user in range(no_participants):
                 no_imgs = int(round(sampled_probabilities[user]))
@@ -365,8 +366,8 @@ class ImageHelper(Helper):
             lower_bound = y * (1. - bias) / (num_labels - 1)
 
             upper_bound_offset = 0
-            np.random.seed(42 + iidx)
-            rd = np.random.random_sample()
+            sample_rng = np.random.default_rng(seed_from(self.params['seed'], 'assign_data_worker_group', iidx))
+            rd = sample_rng.random()
 
 
             other_group_size = (1 - upper_bound - upper_bound_offset + lower_bound) / (num_labels - 1)
@@ -386,8 +387,8 @@ class ImageHelper(Helper):
                 server_label.append(y)
                 server_counter[int(y)] += 1
             else:
-                np.random.seed(73 + iidx)
-                rd = np.random.random_sample()
+                select_rng = np.random.default_rng(seed_from(self.params['seed'], 'assign_data_selected_worker', iidx))
+                rd = select_rng.random()
                 selected_worker = int(worker_group * worker_per_group + int(np.floor(rd * worker_per_group)))
                 each_worker_data[selected_worker].append(x)
                 each_worker_label[selected_worker].append(y)
@@ -399,7 +400,8 @@ class ImageHelper(Helper):
             if 'save_data' in self.params.keys():
                 which_data_dist = self.params['save_data']
             else:
-                which_data_dist = random.sample(range(1,4), 1)[0]
+                dist_rng = random.Random(seed_from(self.params['seed'], 'group_size_distribution'))
+                which_data_dist = dist_rng.sample(range(1, 4), 1)[0]
             group_sizes = config.random_group_size_dict[self.params['type']][which_data_dist]
         else:
             group_sizes = [num_labels for _ in range(num_labels)]
@@ -431,8 +433,8 @@ class ImageHelper(Helper):
             split_map_for_i.append(0)
             split_map_for_not_i = [0]
             for ii in range(1, group_size):
-                np.random.seed(42 + i)
-                split_ratio_for_i = np.random.normal(ii*group_frac, group_frac//num_labels)
+                split_rng = np.random.default_rng(seed_from(self.params['seed'], 'assign_data_nonuniform_split', i))
+                split_ratio_for_i = split_rng.normal(ii * group_frac, group_frac // num_labels)
                 split_ratio_for_not_i = ii*group_frac*2 - split_ratio_for_i
                 split_map_for_i.append(int(split_ratio_for_i*len(i_indices)))
                 split_map_for_not_i.append(int(split_ratio_for_not_i*len(not_i_indices)))
@@ -469,7 +471,7 @@ class ImageHelper(Helper):
         logger.info(f'Loaded data')
 
     def split_train_val_single(self, train_data, val_size, seed=1):
-        np.random.seed(seed)
+        np.random.seed(seed_from(self.params['seed'], 'split_train_val_single', seed))
         train_data, val_data = torch.utils.data.random_split(train_data, [len(train_data)-val_size, val_size])
         return train_data, val_data
 
@@ -526,12 +528,17 @@ class ImageHelper(Helper):
 
         self.poison_epochs_by_adversary = {}
         if self.params['is_random_adversary']:
+            adversary_rng = random.Random(seed_from(self.params['seed'], 'adversarial_namelist'))
             if self.params['aggregation_methods'] == config.AGGR_FLTRUST:
-                random.seed(42)
-                self.adversarial_namelist = random.sample(self.participants_list[:-1], self.params[f'number_of_adversary_{self.params["attack_methods"]}'])
+                self.adversarial_namelist = adversary_rng.sample(
+                    self.participants_list[:-1],
+                    self.params[f'number_of_adversary_{self.params["attack_methods"]}']
+                )
             else:
-                random.seed(42)
-                self.adversarial_namelist = random.sample(self.participants_list, self.params[f'number_of_adversary_{self.params["attack_methods"]}'])
+                self.adversarial_namelist = adversary_rng.sample(
+                    self.participants_list,
+                    self.params[f'number_of_adversary_{self.params["attack_methods"]}']
+                )
         else:
             self.adversarial_namelist = self.params['adversary_list']
         for idx, id in enumerate(self.adversarial_namelist):
@@ -770,8 +777,8 @@ class ImageHelper(Helper):
                             train_loaders.append((id_worker, train_loader))
             elif self.params['varying_local_data_size']:
                 all_range = list(range(len(self.train_dataset)))
-                random.seed(42)
-                random.shuffle(all_range)
+                varying_data_rng = random.Random(seed_from(self.params['seed'], 'varying_local_data_size_shuffle'))
+                varying_data_rng.shuffle(all_range)
                 # make 100 local data sizes for 100 participants
                 # minimum 100, maximum 2000
                 mean_data_size = (len(all_range))//self.params['number_of_total_participants']
@@ -786,8 +793,8 @@ class ImageHelper(Helper):
                 ## sample indices for participants that are equally
                 logger.info('sampling indices for participants that are equally')
                 all_range = list(range(len(self.train_dataset)))
-                random.seed(42)
-                random.shuffle(all_range)
+                equal_data_rng = random.Random(seed_from(self.params['seed'], 'equal_local_data_size_shuffle'))
+                equal_data_rng.shuffle(all_range)
                 train_loaders = [(pos, self.get_train_old(all_range, pos))
                                 for pos in tqdm(range(self.params['number_of_total_participants']))]
 
