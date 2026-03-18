@@ -99,6 +99,23 @@ class FLServer:
                 # 确保 inversefed 的模型、伪梯度和标准化统计量处于同一设备
                 self.model.to(self.cfg.device)
                 attack_device = next(self.model.parameters()).device
+                os.makedirs("attack_results", exist_ok=True)
+
+                # 在执行 inversefed 之前，先保存目标客户端的一批真实训练图像用于对比
+                target_loader = self.clients[target_client_idx].train_loader
+                target_x, _ = next(iter(target_loader))
+                target_x = target_x[: self.cfg.batch_size].detach().cpu()
+                target_save_path = (
+                    f"attack_results/target_client{self.clients[target_client_idx].client_id}"
+                    f"_bs{self.cfg.batch_size}.png"
+                )
+                torchvision.utils.save_image(
+                    target_x,
+                    target_save_path,
+                    nrow=max(1, int(self.cfg.batch_size**0.5)),
+                )
+                print(f"[*] 已保存目标客户端真实训练图像至 {target_save_path}")
+
                 # 提取目标客户端防御后的等效梯度
                 alpha = self.cfg.fedcsap_hybrid_alpha if self.cfg.aggregation == "fedcsap" else 1.0
                 noise_std = self.cfg.gaussian_noise_std
@@ -143,8 +160,7 @@ class FLServer:
                 # 执行重建计算
                 output, stats = rec_machine.reconstruct(pseudo_gradient, None, img_shape=(3, 32, 32))
                 
-                # 确保存储目录存在并保存图像
-                os.makedirs("attack_results", exist_ok=True)
+                # 保存重建图像
                 save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}.png"
                 torchvision.utils.save_image(output, save_path, nrow=int(self.cfg.batch_size**0.5))
                 
