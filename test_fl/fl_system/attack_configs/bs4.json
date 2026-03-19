@@ -1,0 +1,15 @@
+{
+  "signed": true,
+  "cost_fn": "sim",
+  "indices": "def",
+  "weights": "equal",
+  "lr": 0.05,
+  "optim": "adam",
+  "restarts": 1,
+  "max_iterations": 10000,
+  "total_variation": 0.00005,
+  "init": "randn",
+  "filter": "none",
+  "lr_decay": true,
+  "scoring_choice": "loss"
+}

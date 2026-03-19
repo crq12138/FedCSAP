@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 
@@ -37,6 +38,7 @@ class FLConfig:
     
     # 调试模式：客户端本地训练与攻击均固定使用同一批样本
     fixed_batch: bool = False
+    attack_config_dir: Path = Path(__file__).resolve().parent / "attack_configs"
 
     # 快速调试
     max_train_samples_per_client: Optional[int] = None

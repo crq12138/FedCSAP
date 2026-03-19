@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import random
+from pathlib import Path
 
 import torch
 
@@ -48,6 +49,15 @@ class FLServer:
         for k, global_tensor in global_state.items():
             out[k] = global_tensor + alpha * (agg_state[k] - global_tensor)
         return out
+
+    def _load_attack_config(self) -> dict:
+        config_path = Path(self.cfg.attack_config_dir) / f"bs{self.cfg.batch_size}.json"
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"Attack config not found for batch_size={self.cfg.batch_size}: {config_path}"
+            )
+        with config_path.open("r", encoding="utf-8") as f:
+            return json.load(f)
 
     def train(self):
 
@@ -95,20 +105,8 @@ class FLServer:
             # ==========================================
             # 仅在第一轮执行攻击，以验证初始阶段的隐私泄漏情况
             if rnd == 1:
-                # 优化器配置：使用余弦相似度损失，针对小 Batch Size 进行 L-BFGS 或 Adam 优化
-                config = dict(signed=True,
-                              cost_fn='sim', 
-                              indices='def', 
-                              weights='equal',
-                              lr=0.05, 
-                              optim='adam', 
-                              restarts=1,          # 基线测试可设为 2 提高稳定性
-                              max_iterations=10000, 
-                              total_variation=5e-5,
-                              init='randn',
-                              filter='none',
-                              lr_decay=True,
-                              scoring_choice='loss')
+                # 按 batch_size 读取对应的攻击配置（bs1/bs4/bs16...）
+                config = self._load_attack_config()
                 target_client_idx = 1
                 # 确保 inversefed 的模型、伪梯度和标准化统计量处于同一设备
                 self.model.to(self.cfg.device)
