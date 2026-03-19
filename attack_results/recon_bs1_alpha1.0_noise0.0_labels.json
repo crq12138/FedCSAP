@@ -1,0 +1,11 @@
+{
+  "target_client_id": 1,
+  "batch_size": 1,
+  "dataset": "cifar10",
+  "ground_truth_labels": [
+    9
+  ],
+  "reconstructed_pred_labels": [
+    0
+  ]
+}

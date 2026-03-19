@@ -95,19 +95,36 @@ class FLServer:
             # ==========================================
             # 仅在第一轮执行攻击，以验证初始阶段的隐私泄漏情况
             if rnd == 1:
-                target_client_idx = 0
+                # 优化器配置：使用余弦相似度损失，针对小 Batch Size 进行 L-BFGS 或 Adam 优化
+                config = dict(signed=True,
+                              cost_fn='sim', 
+                              indices='def', 
+                              weights='equal',
+                              lr=0.05, 
+                              optim='adam', 
+                              restarts=1,          # 基线测试可设为 2 提高稳定性
+                              max_iterations=10000, 
+                              total_variation=5e-5,
+                              init='randn',
+                              filter='none',
+                              lr_decay=True,
+                              scoring_choice='loss')
+                target_client_idx = 1
                 # 确保 inversefed 的模型、伪梯度和标准化统计量处于同一设备
                 self.model.to(self.cfg.device)
                 attack_device = next(self.model.parameters()).device
                 os.makedirs("attack_results", exist_ok=True)
 
                 # 在执行 inversefed 之前，先保存目标客户端的一批真实训练图像用于对比
-                target_loader = self.clients[target_client_idx].train_loader
-                target_x, target_y = next(iter(target_loader))
+                if getattr(self.clients[target_client_idx], "fixed_batch", False):
+                    target_x, target_y = self.clients[target_client_idx].get_fixed_batch()
+                else:
+                    target_loader = self.clients[target_client_idx].train_loader
+                    target_x, target_y = next(iter(target_loader))
                 target_x = target_x[: self.cfg.batch_size].detach().cpu()
                 target_y = target_y[: self.cfg.batch_size].detach().cpu().long().view(-1)
                 target_save_path = (
-                    f"attack_results/target_client{self.clients[target_client_idx].client_id}"
+                    f"attack_results/target_client{self.clients[target_client_idx].client_id}_tv{config['total_variation']}"
                     f"_bs{self.cfg.batch_size}.png"
                 )
                 torchvision.utils.save_image(
@@ -149,22 +166,7 @@ class FLServer:
                     ds = torch.as_tensor([0.5, 0.5, 0.5], device=attack_device)[:, None, None]
                 else:
                     raise ValueError(f"Unsupported dataset for attack normalization: {self.cfg.dataset}")
-
-                # 优化器配置：使用余弦相似度损失，针对小 Batch Size 进行 L-BFGS 或 Adam 优化
-                config = dict(signed=True,
-                              cost_fn='sim', 
-                              indices='def', 
-                              weights='equal',
-                              lr=0.1, 
-                              optim='adam', 
-                              restarts=2,          # 基线测试可设为 2 提高稳定性
-                              max_iterations=4800, 
-                              total_variation=1e-1,
-                              init='randn',
-                              filter='none',
-                              lr_decay=True,
-                              scoring_choice='loss')
-
+                print(config['total_variation'])
                 print(f"\n[*] 正在对 Client {self.clients[target_client_idx].client_id} 执行梯度反转攻击 (Baseline)...")
                 print(f"[*] 参数配置: Batch Size={self.cfg.batch_size}, Alpha={alpha}, Noise={noise_std}")
                 
@@ -176,14 +178,14 @@ class FLServer:
                 
                 # 保存重建图像（从模型输入域反归一化到可视化域 [0, 1]）
                 output_vis = torch.clamp(output.detach().cpu() * ds.detach().cpu() + dm.detach().cpu(), 0.0, 1.0)
-                save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}.png"
+                save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}_client{target_client_idx}_tv{config['total_variation']}.png"
                 torchvision.utils.save_image(output_vis, save_path, nrow=int(self.cfg.batch_size**0.5))
 
                 # 保存重建对应标签，便于后续图像-标签对齐分析
                 with torch.no_grad():
                     recon_logits = attack_model(output.to(attack_device))
                     recon_pred_labels = recon_logits.argmax(dim=1).detach().cpu().tolist()
-                label_save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}_labels.json"
+                label_save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}_tv{config['total_variation']}_labels.json"
                 label_payload = {
                     "target_client_id": int(self.clients[target_client_idx].client_id),
                     "batch_size": int(self.cfg.batch_size),

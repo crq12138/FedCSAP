@@ -34,6 +34,9 @@ class FLConfig:
 
     # 高斯加噪（对聚合后的权重进行噪声注入）
     gaussian_noise_std: float = 0.0
+    
+    # 调试模式：客户端本地训练与攻击均固定使用同一批样本
+    fixed_batch: bool = False
 
     # 快速调试
     max_train_samples_per_client: Optional[int] = None

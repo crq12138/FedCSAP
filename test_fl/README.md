@@ -48,6 +48,20 @@ python -m test_fl.fl_system.main \
   --aggregation fedavg
 ```
 
+### CIFAR10（固定同一批样本用于本地训练与重建对比）
+
+```bash
+python -m test_fl.fl_system.main \
+  --dataset cifar10 \
+  --aggregation fedavg \
+  --attack none \
+  --fixed-batch \
+  --local-epochs 1 \
+  --batch-size 1 \
+  --rounds 1
+```
+
+
 ### PATHMNIST（clean）
 
 ```bash
@@ -79,3 +93,6 @@ python -m test_fl.fl_system.main \
   --max-train-samples-per-client 32 \
   --max-test-samples 128
 ```
+
+
+python -m test_fl.fl_system.main     --dataset cifar10     --aggregation fedavg     --local-epochs 1     --batch-size 1    --gaussian-noise-std 0.0     --num-clients 20 --attack=none --mal-pcnt=0

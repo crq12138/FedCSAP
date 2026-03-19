@@ -32,6 +32,8 @@ def parse_args():
     p.add_argument("--gaussian-noise-std", type=float, default=0.0,
                    help="Std of Gaussian noise added to aggregated model parameters.")
     p.add_argument("--attack", choices=["none", "sf"], default="sf")
+    p.add_argument("--fixed-batch", action="store_true",
+                   help="Use the same fixed training batch for local training and reconstruction attack.")
     p.add_argument("--mal-pcnt", type=float, default=0.3)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
@@ -76,13 +78,14 @@ def main():
         fedcsap_hybrid_alpha=args.fedcsap_hybrid_alpha,
         gaussian_noise_std=args.gaussian_noise_std,
         seed=args.seed,
+        fixed_batch=args.fixed_batch,
         device=resolve_device(args.device),
         max_train_samples_per_client=args.max_train_samples_per_client,
         max_test_samples=args.max_test_samples,
     )
 
-    if cfg.num_clients != 20:
-        raise ValueError("根据需求，联邦学习客户端数量必须保持在20个。")
+    if cfg.num_clients > 20:
+        raise ValueError("根据需求，联邦学习客户端数量不能超过20个。")
 
     set_seed(cfg.seed)
 
@@ -98,7 +101,7 @@ def main():
     )
     test_loader = build_test_loader(test_ds, cfg.batch_size, cfg.max_test_samples)
 
-    clients = [FLClient(i, loader, cfg.device) for i, loader in enumerate(client_loaders)]
+    clients = [FLClient(i, loader, cfg.device, fixed_batch=cfg.fixed_batch) for i, loader in enumerate(client_loaders)]
     model = build_model(cfg.dataset, num_classes=num_classes, in_channels=in_channels)
 
     print(
