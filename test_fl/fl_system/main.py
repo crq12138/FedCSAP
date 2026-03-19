@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import random
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -20,7 +21,7 @@ def parse_args():
     p.add_argument("--rounds", type=int, default=200)
     p.add_argument("--num-clients", type=int, default=20)
     p.add_argument("--dirichlet-alpha", type=float, default=0.9)
-    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--batch-size", "--batch_size", dest="batch_size", type=int, default=64)
     p.add_argument("--lr", type=float, default=0.1)
     # p.add_argument("--eta", type=float, default=0.1)
     p.add_argument("--momentum", type=float, default=0.9)
@@ -39,6 +40,8 @@ def parse_args():
     p.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
     p.add_argument("--max-train-samples-per-client", type=int, default=None)
     p.add_argument("--max-test-samples", type=int, default=None)
+    p.add_argument("--attack-config-dir", default=None,
+                   help="Directory that contains attack config JSON files named as bs{batch_size}.json.")
     return p.parse_args()
 
 
@@ -83,6 +86,8 @@ def main():
         max_train_samples_per_client=args.max_train_samples_per_client,
         max_test_samples=args.max_test_samples,
     )
+    if args.attack_config_dir is not None:
+        cfg.attack_config_dir = Path(args.attack_config_dir)
 
     if cfg.num_clients > 20:
         raise ValueError("根据需求，联邦学习客户端数量不能超过20个。")
