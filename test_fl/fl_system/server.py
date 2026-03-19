@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import random
 
 import torch
@@ -177,8 +178,26 @@ class FLServer:
                 output_vis = torch.clamp(output.detach().cpu() * ds.detach().cpu() + dm.detach().cpu(), 0.0, 1.0)
                 save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}.png"
                 torchvision.utils.save_image(output_vis, save_path, nrow=int(self.cfg.batch_size**0.5))
-                
-                print(f"[*] 攻击完成，图像已保存至 {save_path}。最优损失: {stats['opt']: .4f}\n")
+
+                # 保存重建对应标签，便于后续图像-标签对齐分析
+                with torch.no_grad():
+                    recon_logits = attack_model(output.to(attack_device))
+                    recon_pred_labels = recon_logits.argmax(dim=1).detach().cpu().tolist()
+                label_save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}_labels.json"
+                label_payload = {
+                    "target_client_id": int(self.clients[target_client_idx].client_id),
+                    "batch_size": int(self.cfg.batch_size),
+                    "dataset": self.cfg.dataset,
+                    "ground_truth_labels": attack_y.detach().cpu().tolist(),
+                    "reconstructed_pred_labels": recon_pred_labels,
+                }
+                with open(label_save_path, "w", encoding="utf-8") as f:
+                    json.dump(label_payload, f, ensure_ascii=False, indent=2)
+
+                print(
+                    f"[*] 攻击完成，图像已保存至 {save_path}，标签已保存至 {label_save_path}。"
+                    f"最优损失: {stats['opt']: .4f}\n"
+                )
             # ==========================================
 
             acc = self.evaluate()
