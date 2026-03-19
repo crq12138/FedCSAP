@@ -107,6 +107,7 @@ class FLServer:
             if rnd == 1:
                 # 按 batch_size 读取对应的攻击配置（bs1/bs4/bs16...）
                 config = self._load_attack_config()
+                print(config)
                 target_client_idx = 1
                 # 确保 inversefed 的模型、伪梯度和标准化统计量处于同一设备
                 self.model.to(self.cfg.device)
