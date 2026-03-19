@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import random
 
 import torch
@@ -94,8 +95,6 @@ class FLServer:
             # 仅在第一轮执行攻击，以验证初始阶段的隐私泄漏情况
             if rnd == 1:
                 target_client_idx = 0
-                target_state = client_states[target_client_idx]
-                pseudo_gradient = []
                 # 确保 inversefed 的模型、伪梯度和标准化统计量处于同一设备
                 self.model.to(self.cfg.device)
                 attack_device = next(self.model.parameters()).device
@@ -103,8 +102,9 @@ class FLServer:
 
                 # 在执行 inversefed 之前，先保存目标客户端的一批真实训练图像用于对比
                 target_loader = self.clients[target_client_idx].train_loader
-                target_x, _ = next(iter(target_loader))
+                target_x, target_y = next(iter(target_loader))
                 target_x = target_x[: self.cfg.batch_size].detach().cpu()
+                target_y = target_y[: self.cfg.batch_size].detach().cpu().long().view(-1)
                 target_save_path = (
                     f"attack_results/target_client{self.clients[target_client_idx].client_id}"
                     f"_bs{self.cfg.batch_size}.png"
@@ -116,25 +116,38 @@ class FLServer:
                 )
                 print(f"[*] 已保存目标客户端真实训练图像至 {target_save_path}")
 
-                # 提取目标客户端防御后的等效梯度
+                # 提取目标梯度（用于重建链路正确性验证）
+                # 注意：客户端上传的是“多步本地训练后的参数”，并非单批次原始梯度。
+                # 直接用参数差做反演会对应“多样本混合信号”，常见现象就是灰图/均值图。
+                # 这里使用目标客户端首个 batch 在全局模型上的真实梯度做基线排查。
                 alpha = self.cfg.fedcsap_hybrid_alpha if self.cfg.aggregation == "fedcsap" else 1.0
                 noise_std = self.cfg.gaussian_noise_std
-                for name, _ in self.model.named_parameters():
-                    # 仅使用可训练参数来构造梯度，顺序必须与 model.parameters() 一致；
-                    # 否则会与 inversefed 内部 autograd 梯度列表错位，触发 shape mismatch。
-                    global_param = global_state[name]
-                    client_param = target_state[name]
-                    # 模拟窃听者计算：防御衰减与噪声叠加
-                    grad_tensor = global_param - client_param
-                    grad_tensor = global_param - client_param
-                    grad_tensor = alpha * grad_tensor
-                    if noise_std > 0:
-                        grad_tensor += torch.randn_like(grad_tensor) * noise_std
-                    pseudo_gradient.append(grad_tensor.to(attack_device))
+                attack_model = copy.deepcopy(self.model).to(attack_device)
+                attack_model.load_state_dict(global_state)
+                attack_model.eval()
 
-                # CIFAR-10 数据集统计特征 (需与 datasets.py 中 Normalize 一致)
-                dm = torch.as_tensor([0.4914, 0.4822, 0.4465], device=attack_device)[:, None, None]
-                ds = torch.as_tensor([0.2023, 0.1994, 0.2010], device=attack_device)[:, None, None]
+                attack_x = target_x.to(attack_device)
+                attack_y = target_y.to(attack_device)
+                attack_loss = torch.nn.CrossEntropyLoss(reduction="mean")(attack_model(attack_x), attack_y)
+                pseudo_gradient = torch.autograd.grad(attack_loss, attack_model.parameters(), create_graph=False)
+                pseudo_gradient = [g.detach() for g in pseudo_gradient]
+                if noise_std > 0:
+                    pseudo_gradient = [g + torch.randn_like(g) * noise_std for g in pseudo_gradient]
+
+                # 规范化统计量必须与 datasets.py 的预处理保持一致：
+                # - CIFAR10: 仅 ToTensor, 无 Normalize -> mean=0, std=1
+                # - MNIST/PATHMNIST: 与对应 Normalize 参数保持一致
+                if self.cfg.dataset == "cifar10":
+                    dm = torch.zeros(3, device=attack_device)[:, None, None]
+                    ds = torch.ones(3, device=attack_device)[:, None, None]
+                elif self.cfg.dataset == "mnist":
+                    dm = torch.as_tensor([0.1307], device=attack_device)[:, None, None]
+                    ds = torch.as_tensor([0.3081], device=attack_device)[:, None, None]
+                elif self.cfg.dataset == "pathmnist":
+                    dm = torch.as_tensor([0.5, 0.5, 0.5], device=attack_device)[:, None, None]
+                    ds = torch.as_tensor([0.5, 0.5, 0.5], device=attack_device)[:, None, None]
+                else:
+                    raise ValueError(f"Unsupported dataset for attack normalization: {self.cfg.dataset}")
 
                 # 优化器配置：使用余弦相似度损失，针对小 Batch Size 进行 L-BFGS 或 Adam 优化
                 config = dict(signed=True,
@@ -155,14 +168,15 @@ class FLServer:
                 print(f"[*] 参数配置: Batch Size={self.cfg.batch_size}, Alpha={alpha}, Noise={noise_std}")
                 
                 # 设置重建的图像数量严格等于 batch_size
-                rec_machine = GradientReconstructor(self.model, (dm, ds), config, num_images=self.cfg.batch_size)
+                rec_machine = GradientReconstructor(attack_model, (dm, ds), config, num_images=self.cfg.batch_size)
                 
                 # 执行重建计算
-                output, stats = rec_machine.reconstruct(pseudo_gradient, None, img_shape=(3, 32, 32))
+                output, stats = rec_machine.reconstruct(pseudo_gradient, attack_y, img_shape=(3, 32, 32))
                 
-                # 保存重建图像
+                # 保存重建图像（从模型输入域反归一化到可视化域 [0, 1]）
+                output_vis = torch.clamp(output.detach().cpu() * ds.detach().cpu() + dm.detach().cpu(), 0.0, 1.0)
                 save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}.png"
-                torchvision.utils.save_image(output, save_path, nrow=int(self.cfg.batch_size**0.5))
+                torchvision.utils.save_image(output_vis, save_path, nrow=int(self.cfg.batch_size**0.5))
                 
                 print(f"[*] 攻击完成，图像已保存至 {save_path}。最优损失: {stats['opt']: .4f}\n")
             # ==========================================
