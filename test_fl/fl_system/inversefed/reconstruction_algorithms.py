@@ -20,6 +20,8 @@ DEFAULT_CONFIG = dict(signed=False,
                       restarts=1,
                       max_iterations=4800,
                       total_variation=1e-1,
+                      bn_stat=False,
+                      bn_reg_scale=0.0,
                       init='randn',
                       filter='none',
                       lr_decay=True,
@@ -58,6 +60,13 @@ class GradientReconstructor():
 
         self.loss_fn = torch.nn.CrossEntropyLoss(reduction='mean')
         self.iDLG = True
+        self.bn_layers = [
+            m for m in self.model.modules()
+            if isinstance(m, (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d, torch.nn.BatchNorm3d))
+            and getattr(m, "track_running_stats", False)
+            and m.running_mean is not None
+            and m.running_var is not None
+        ]
 
     def reconstruct(self, input_data, labels, img_shape=(3, 32, 32), dryrun=False, eval=True, tol=None):
         """Reconstruct image from gradient."""
@@ -200,7 +209,37 @@ class GradientReconstructor():
         def closure():
             optimizer.zero_grad()
             self.model.zero_grad()
-            loss = self.loss_fn(self.model(x_trial), label)
+            bn_losses = []
+            hooks = []
+            if self.config['bn_stat'] and len(self.bn_layers) > 0 and self.config['bn_reg_scale'] > 0:
+                def _bn_hook(module, hook_input, _hook_output):
+                    x = hook_input[0]
+                    if x.dim() == 2:
+                        dims = (0,)
+                    elif x.dim() == 3:
+                        dims = (0, 2)
+                    elif x.dim() == 4:
+                        dims = (0, 2, 3)
+                    elif x.dim() == 5:
+                        dims = (0, 2, 3, 4)
+                    else:
+                        return
+                    mean = x.mean(dim=dims)
+                    var = x.var(dim=dims, unbiased=False)
+                    bn_losses.append(
+                        torch.nn.functional.mse_loss(mean, module.running_mean.detach())
+                        + torch.nn.functional.mse_loss(var, module.running_var.detach())
+                    )
+
+                for bn in self.bn_layers:
+                    hooks.append(bn.register_forward_hook(_bn_hook))
+
+            pred = self.model(x_trial)
+
+            for h in hooks:
+                h.remove()
+
+            loss = self.loss_fn(pred, label)
             gradient = torch.autograd.grad(loss, self.model.parameters(), create_graph=True)
             rec_loss = reconstruction_costs([gradient], input_gradient,
                                             cost_fn=self.config['cost_fn'], indices=self.config['indices'],
@@ -208,6 +247,8 @@ class GradientReconstructor():
 
             if self.config['total_variation'] > 0:
                 rec_loss += self.config['total_variation'] * TV(x_trial)
+            if len(bn_losses) > 0:
+                rec_loss += self.config['bn_reg_scale'] * torch.stack(bn_losses).mean()
             rec_loss.backward()
             if self.config['signed']:
                 x_trial.grad.sign_()
