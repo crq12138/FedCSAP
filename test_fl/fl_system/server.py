@@ -126,15 +126,25 @@ class FLServer:
                     client_param = target_state[name]
                     # 模拟窃听者计算：防御衰减与噪声叠加
                     grad_tensor = global_param - client_param
-                    grad_tensor = global_param - client_param
                     grad_tensor = alpha * grad_tensor
                     if noise_std > 0:
                         grad_tensor += torch.randn_like(grad_tensor) * noise_std
                     pseudo_gradient.append(grad_tensor.to(attack_device))
 
-                # CIFAR-10 数据集统计特征 (需与 datasets.py 中 Normalize 一致)
-                dm = torch.as_tensor([0.4914, 0.4822, 0.4465], device=attack_device)[:, None, None]
-                ds = torch.as_tensor([0.2023, 0.1994, 0.2010], device=attack_device)[:, None, None]
+                # 规范化统计量必须与 datasets.py 的预处理保持一致：
+                # - CIFAR10: 仅 ToTensor, 无 Normalize -> mean=0, std=1
+                # - MNIST/PATHMNIST: 与对应 Normalize 参数保持一致
+                if self.cfg.dataset == "cifar10":
+                    dm = torch.zeros(3, device=attack_device)[:, None, None]
+                    ds = torch.ones(3, device=attack_device)[:, None, None]
+                elif self.cfg.dataset == "mnist":
+                    dm = torch.as_tensor([0.1307], device=attack_device)[:, None, None]
+                    ds = torch.as_tensor([0.3081], device=attack_device)[:, None, None]
+                elif self.cfg.dataset == "pathmnist":
+                    dm = torch.as_tensor([0.5, 0.5, 0.5], device=attack_device)[:, None, None]
+                    ds = torch.as_tensor([0.5, 0.5, 0.5], device=attack_device)[:, None, None]
+                else:
+                    raise ValueError(f"Unsupported dataset for attack normalization: {self.cfg.dataset}")
 
                 # 优化器配置：使用余弦相似度损失，针对小 Batch Size 进行 L-BFGS 或 Adam 优化
                 config = dict(signed=True,
@@ -160,9 +170,10 @@ class FLServer:
                 # 执行重建计算
                 output, stats = rec_machine.reconstruct(pseudo_gradient, None, img_shape=(3, 32, 32))
                 
-                # 保存重建图像
+                # 保存重建图像（从模型输入域反归一化到可视化域 [0, 1]）
+                output_vis = torch.clamp(output.detach().cpu() * ds.detach().cpu() + dm.detach().cpu(), 0.0, 1.0)
                 save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}.png"
-                torchvision.utils.save_image(output, save_path, nrow=int(self.cfg.batch_size**0.5))
+                torchvision.utils.save_image(output_vis, save_path, nrow=int(self.cfg.batch_size**0.5))
                 
                 print(f"[*] 攻击完成，图像已保存至 {save_path}。最优损失: {stats['opt']: .4f}\n")
             # ==========================================
