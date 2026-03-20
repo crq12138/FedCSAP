@@ -26,6 +26,8 @@ class FLConfig:
     # 攻击设置
     attack: str = "sf"  # none | sf
     mal_pcnt: float = 0.3
+    # 梯度反演重建图像数（默认跟随 batch_size，支持通过 --num-images 单独指定）
+    num_images: Optional[int] = None
 
     # 聚合设置
     aggregation: str = "fedavg"  # fedavg | fedcsap

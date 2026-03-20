@@ -51,15 +51,36 @@ class FLServer:
         return out
 
     def _load_attack_config(self) -> dict:
-        config_path = Path(self.cfg.attack_config_dir) / f"bs{self.cfg.batch_size}.json"
+        attack_num_images = self.cfg.num_images or self.cfg.batch_size
+        config_path = Path(self.cfg.attack_config_dir) / f"bs{attack_num_images}.json"
         if not config_path.exists():
             raise FileNotFoundError(
-                f"Attack config not found for batch_size={self.cfg.batch_size}: {config_path}"
+                f"Attack config not found for num_images={attack_num_images}: {config_path}"
             )
         with config_path.open("r", encoding="utf-8") as f:
             return json.load(f)
 
+    @staticmethod
+    def _collect_attack_batch(data_loader, num_images: int):
+        xs, ys = [], []
+        total = 0
+        for x, y in data_loader:
+            if total >= num_images:
+                break
+            need = num_images - total
+            x = x[:need]
+            y = y[:need]
+            xs.append(x.detach().cpu())
+            ys.append(y.detach().cpu().long().view(-1))
+            total += x.shape[0]
+        if total < num_images:
+            raise ValueError(
+                f"Not enough samples to build attack batch: required={num_images}, got={total}."
+            )
+        return torch.cat(xs, dim=0), torch.cat(ys, dim=0)
+
     def train(self):
+        attack_num_images = self.cfg.num_images or self.cfg.batch_size
 
         for rnd in range(1, self.cfg.rounds + 1):
             client_states = []
@@ -105,7 +126,7 @@ class FLServer:
             # ==========================================
             # 仅在第一轮执行攻击，以验证初始阶段的隐私泄漏情况
             if rnd == 1:
-                # 按 batch_size 读取对应的攻击配置（bs1/bs4/bs16...）
+                # 按 num_images 读取对应的攻击配置（bs1/bs4/bs16...）
                 config = self._load_attack_config()
                 print(config)
                 target_client_idx = 1
@@ -117,19 +138,25 @@ class FLServer:
                 # 在执行 inversefed 之前，先保存目标客户端的一批真实训练图像用于对比
                 if getattr(self.clients[target_client_idx], "fixed_batch", False):
                     target_x, target_y = self.clients[target_client_idx].get_fixed_batch()
+                    if target_x.shape[0] < attack_num_images:
+                        raise ValueError(
+                            "fixed_batch 模式下，攻击样本数(num_images)不能大于训练 batch_size。"
+                            f" 当前 fixed batch 仅有 {target_x.shape[0]} 张，请增大 --batch-size，"
+                            "或者关闭 --fixed-batch。"
+                        )
+                    target_x = target_x[:attack_num_images].detach().cpu()
+                    target_y = target_y[:attack_num_images].detach().cpu().long().view(-1)
                 else:
                     target_loader = self.clients[target_client_idx].train_loader
-                    target_x, target_y = next(iter(target_loader))
-                target_x = target_x[: self.cfg.batch_size].detach().cpu()
-                target_y = target_y[: self.cfg.batch_size].detach().cpu().long().view(-1)
+                    target_x, target_y = self._collect_attack_batch(target_loader, attack_num_images)
                 target_save_path = (
                     f"attack_results/target_client{self.clients[target_client_idx].client_id}_tv{config['total_variation']}"
-                    f"_bs{self.cfg.batch_size}.png"
+                    f"_bs{attack_num_images}.png"
                 )
                 torchvision.utils.save_image(
                     target_x,
                     target_save_path,
-                    nrow=max(1, int(self.cfg.batch_size**0.5)),
+                    nrow=max(1, int(attack_num_images**0.5)),
                 )
                 print(f"[*] 已保存目标客户端真实训练图像至 {target_save_path}")
 
@@ -167,27 +194,27 @@ class FLServer:
                     raise ValueError(f"Unsupported dataset for attack normalization: {self.cfg.dataset}")
                 print(config['total_variation'])
                 print(f"\n[*] 正在对 Client {self.clients[target_client_idx].client_id} 执行梯度反转攻击 (Baseline)...")
-                print(f"[*] 参数配置: Batch Size={self.cfg.batch_size}, Alpha={alpha}, Noise={noise_std}")
+                print(f"[*] 参数配置: Num Images={attack_num_images}, Alpha={alpha}, Noise={noise_std}")
                 
-                # 设置重建的图像数量严格等于 batch_size
-                rec_machine = GradientReconstructor(attack_model, (dm, ds), config, num_images=self.cfg.batch_size)
+                # 设置重建的图像数量严格等于 num_images（默认跟随 batch_size）
+                rec_machine = GradientReconstructor(attack_model, (dm, ds), config, num_images=attack_num_images)
                 
                 # 执行重建计算
                 output, stats = rec_machine.reconstruct(pseudo_gradient, attack_y, img_shape=(3, 32, 32))
                 
                 # 保存重建图像（从模型输入域反归一化到可视化域 [0, 1]）
                 output_vis = torch.clamp(output.detach().cpu() * ds.detach().cpu() + dm.detach().cpu(), 0.0, 1.0)
-                save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}_client{target_client_idx}_tv{config['total_variation']}.png"
-                torchvision.utils.save_image(output_vis, save_path, nrow=int(self.cfg.batch_size**0.5))
+                save_path = f"attack_results/recon_bs{attack_num_images}_alpha{alpha}_noise{noise_std}_client{target_client_idx}_tv{config['total_variation']}.png"
+                torchvision.utils.save_image(output_vis, save_path, nrow=int(attack_num_images**0.5))
 
                 # 保存重建对应标签，便于后续图像-标签对齐分析
                 with torch.no_grad():
                     recon_logits = attack_model(output.to(attack_device))
                     recon_pred_labels = recon_logits.argmax(dim=1).detach().cpu().tolist()
-                label_save_path = f"attack_results/recon_bs{self.cfg.batch_size}_alpha{alpha}_noise{noise_std}_tv{config['total_variation']}_labels.json"
+                label_save_path = f"attack_results/recon_bs{attack_num_images}_alpha{alpha}_noise{noise_std}_tv{config['total_variation']}_labels.json"
                 label_payload = {
                     "target_client_id": int(self.clients[target_client_idx].client_id),
-                    "batch_size": int(self.cfg.batch_size),
+                    "num_images": int(attack_num_images),
                     "dataset": self.cfg.dataset,
                     "ground_truth_labels": attack_y.detach().cpu().tolist(),
                     "reconstructed_pred_labels": recon_pred_labels,
