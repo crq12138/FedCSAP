@@ -58,8 +58,13 @@ python -m test_fl.fl_system.main \
   --fixed-batch \
   --local-epochs 1 \
   --batch-size 1 \
+  --num-images 1 \
   --rounds 1
 ```
+
+> 说明：`--batch-size` 控制本地训练 mini-batch，`--num-images` 控制梯度反演时要重建的图像数量（例如重建 16 张图像时使用 `--num-images 16`）。
+>
+> 额外说明：如果开启 `--fixed-batch`，重建样本来自同一个固定训练 batch，因此必须满足 `num-images <= batch-size`。若你想用 `--batch-size 1 --num-images 16`，请不要开启 `--fixed-batch`。
 
 
 ### PATHMNIST（clean）

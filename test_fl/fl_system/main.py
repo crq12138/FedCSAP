@@ -22,6 +22,14 @@ def parse_args():
     p.add_argument("--num-clients", type=int, default=20)
     p.add_argument("--dirichlet-alpha", type=float, default=0.9)
     p.add_argument("--batch-size", "--batch_size", dest="batch_size", type=int, default=64)
+    p.add_argument(
+        "--num-images",
+        "--num_images",
+        dest="num_images",
+        type=int,
+        default=None,
+        help="Number of images used for gradient reconstruction attack. Defaults to --batch-size.",
+    )
     p.add_argument("--lr", type=float, default=0.1)
     # p.add_argument("--eta", type=float, default=0.1)
     p.add_argument("--momentum", type=float, default=0.9)
@@ -63,6 +71,8 @@ def resolve_device(device: str) -> str:
 
 def main():
     args = parse_args()
+    if args.num_images is not None and args.num_images <= 0:
+        raise ValueError("--num-images must be a positive integer.")
     cfg = FLConfig(
         dataset=args.dataset,
         data_dir=args.data_dir,
@@ -78,6 +88,7 @@ def main():
         aggregation=args.aggregation,
         attack=args.attack,
         mal_pcnt=args.mal_pcnt,
+        num_images=args.num_images,
         fedcsap_hybrid_alpha=args.fedcsap_hybrid_alpha,
         gaussian_noise_std=args.gaussian_noise_std,
         seed=args.seed,
