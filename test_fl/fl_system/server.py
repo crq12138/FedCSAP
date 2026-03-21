@@ -151,7 +151,7 @@ class FLServer:
                     target_x, target_y = self._collect_attack_batch(target_loader, attack_num_images)
                 target_save_path = (
                     f"attack_results/target_client{self.clients[target_client_idx].client_id}_tv{config['total_variation']}"
-                    f"_bs{attack_num_images}.png"
+                    f"_bs{attack_num_images}_seed{self.cfg.seed}.png"
                 )
                 torchvision.utils.save_image(
                     target_x,
@@ -204,14 +204,22 @@ class FLServer:
                 
                 # 保存重建图像（从模型输入域反归一化到可视化域 [0, 1]）
                 output_vis = torch.clamp(output.detach().cpu() * ds.detach().cpu() + dm.detach().cpu(), 0.0, 1.0)
-                save_path = f"attack_results/recon_bs{attack_num_images}_alpha{alpha}_noise{noise_std}_client{target_client_idx}_tv{config['total_variation']}.png"
+                save_path = (
+                    "attack_results/"
+                    f"recon_bs{attack_num_images}_alpha{alpha}_noise{noise_std}_"
+                    f"client{target_client_idx}_tv{config['total_variation']}_seed{self.cfg.seed}.png"
+                )
                 torchvision.utils.save_image(output_vis, save_path, nrow=int(attack_num_images**0.5))
 
                 # 保存重建对应标签，便于后续图像-标签对齐分析
                 with torch.no_grad():
                     recon_logits = attack_model(output.to(attack_device))
                     recon_pred_labels = recon_logits.argmax(dim=1).detach().cpu().tolist()
-                label_save_path = f"attack_results/recon_bs{attack_num_images}_alpha{alpha}_noise{noise_std}_tv{config['total_variation']}_labels.json"
+                label_save_path = (
+                    "attack_results/"
+                    f"recon_bs{attack_num_images}_alpha{alpha}_noise{noise_std}_"
+                    f"tv{config['total_variation']}_seed{self.cfg.seed}_labels.json"
+                )
                 label_payload = {
                     "target_client_id": int(self.clients[target_client_idx].client_id),
                     "num_images": int(attack_num_images),
@@ -222,8 +230,30 @@ class FLServer:
                 with open(label_save_path, "w", encoding="utf-8") as f:
                     json.dump(label_payload, f, ensure_ascii=False, indent=2)
 
+                summary_save_path = (
+                    "attack_results/"
+                    f"attack_summary_seed{self.cfg.seed}_agg{self.cfg.aggregation}_"
+                    f"alpha{alpha}_noise{noise_std}_bs{attack_num_images}.json"
+                )
+                summary_payload = {
+                    "seed": int(self.cfg.seed),
+                    "aggregation": self.cfg.aggregation,
+                    "num_clients": int(self.cfg.num_clients),
+                    "fedcsap_hybrid_alpha": float(alpha),
+                    "gaussian_noise_std": float(noise_std),
+                    "num_images": int(attack_num_images),
+                    "target_client_id": int(self.clients[target_client_idx].client_id),
+                    "target_image_path": target_save_path,
+                    "reconstruction_path": save_path,
+                    "label_path": label_save_path,
+                    "reconstruction_loss_opt": float(stats["opt"]),
+                }
+                with open(summary_save_path, "w", encoding="utf-8") as f:
+                    json.dump(summary_payload, f, ensure_ascii=False, indent=2)
+
                 print(
-                    f"[*] 攻击完成，图像已保存至 {save_path}，标签已保存至 {label_save_path}。"
+                    f"[*] 攻击完成，图像已保存至 {save_path}，标签已保存至 {label_save_path}，"
+                    f"汇总已保存至 {summary_save_path}。"
                     f"最优损失: {stats['opt']: .4f}\n"
                 )
             # ==========================================
