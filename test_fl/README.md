@@ -101,3 +101,35 @@ python -m test_fl.fl_system.main \
 
 
 python -m test_fl.fl_system.main     --dataset cifar10     --aggregation fedavg     --local-epochs 1     --batch-size 1    --gaussian-noise-std 0.0     --num-clients 20 --attack=none --mal-pcnt=0
+
+## 16 张图像（seed=0~15）4x4 对比脚本
+
+当你需要在 `batch-size=1` 与 `num-images=1` 下，连续跑 16 个不同 seed（0~15），并比较：
+
+- 原图
+- 原始梯度重建（FedAvg, 无噪声）
+- 加噪梯度重建（FedAvg, 有噪声）
+- FEDCSAP 混合更新重建
+
+可直接运行：
+
+```bash
+python -m test_fl.fl_system.run_compare16 \
+  --dataset cifar10 \
+  --rounds 1 \
+  --local-epochs 1 \
+  --batch-size 1 \
+  --num-images 1 \
+  --num-clients 5 \
+  --attack none \
+  --mal-pcnt 0 \
+  --noisy-std 0.001 \
+  --fedcsap-alpha 0.5
+```
+
+输出：
+- `attack_results/compare16/compare16_original_4x4.png`：16 张原图组成的 4x4 图。
+- `attack_results/compare16/compare16_grad_4x4.png`：16 张原始梯度重建图组成的 4x4 图。
+- `attack_results/compare16/compare16_grad_noise_4x4.png`：16 张噪声梯度重建图组成的 4x4 图。
+- `attack_results/compare16/compare16_fedcsap_4x4.png`：16 张 FEDCSAP 混合更新重建图组成的 4x4 图。
+- `attack_results/compare16/compare16_losses.json`：每个 seed 的 loss 汇总与对应文件路径（用于 loss 对比）。
