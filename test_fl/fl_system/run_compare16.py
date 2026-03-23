@@ -13,7 +13,7 @@ import torchvision.transforms.functional as TF
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Run 16 single-image reconstruction experiments (seed 0~15) and stitch results into a 4x4 panel."
+        description="Run 16 single-image reconstruction experiments (seed 0~15) for a selected scenario and stitch results into a 4x4 panel."
     )
     p.add_argument("--dataset", choices=["cifar10", "mnist", "pathmnist"], default="cifar10")
     p.add_argument("--data-dir", default="./data")
@@ -25,6 +25,7 @@ def parse_args():
     p.add_argument("--attack", choices=["none", "sf"], default="none")
     p.add_argument("--mal-pcnt", type=float, default=0.0)
     p.add_argument("--attack-config-dir", default=None)
+    p.add_argument("--scenario", choices=["grad", "grad_noise", "fedcsap"], default="fedcsap")
     p.add_argument("--noisy-std", type=float, default=0.001, help="Gaussian std for the noisy-gradient scenario.")
     p.add_argument("--fedcsap-alpha", type=float, default=0.5, help="Hybrid alpha for FEDCSAP scenario.")
     p.add_argument("--fedcsap-noise-std", type=float, default=0.0)
@@ -85,91 +86,75 @@ def main():
             "fedcsap_hybrid_alpha": args.fedcsap_alpha,
         },
     }
+    selected = scenarios[args.scenario]
 
     all_records = []
-    original_images: list[torch.Tensor] = []
-    grad_images: list[torch.Tensor] = []
-    grad_noise_images: list[torch.Tensor] = []
-    fedcsap_images: list[torch.Tensor] = []
+    recon_images: list[torch.Tensor] = []
 
     for seed in range(16):
-        per_seed = {}
-        for name, sc in scenarios.items():
-            cmd = [
-                args.python,
-                "-m",
-                "test_fl.fl_system.main",
-                "--dataset",
-                args.dataset,
-                "--data-dir",
-                args.data_dir,
-                "--aggregation",
-                sc["aggregation"],
-                "--local-epochs",
-                str(args.local_epochs),
-                "--batch-size",
-                str(args.batch_size),
-                "--num-images",
-                str(args.num_images),
-                "--gaussian-noise-std",
-                str(sc["gaussian_noise_std"]),
-                "--fedcsap-hybrid-alpha",
-                str(sc["fedcsap_hybrid_alpha"]),
-                "--num-clients",
-                str(args.num_clients),
-                "--attack",
-                args.attack,
-                "--mal-pcnt",
-                str(args.mal_pcnt),
-                "--rounds",
-                str(args.rounds),
-                "--seed",
-                str(seed),
-            ]
-            if args.attack_config_dir:
-                cmd.extend(["--attack-config-dir", args.attack_config_dir])
-            _run(cmd)
+        cmd = [
+            args.python,
+            "-m",
+            "test_fl.fl_system.main",
+            "--dataset",
+            args.dataset,
+            "--data-dir",
+            args.data_dir,
+            "--aggregation",
+            selected["aggregation"],
+            "--local-epochs",
+            str(args.local_epochs),
+            "--batch-size",
+            str(args.batch_size),
+            "--num-images",
+            str(args.num_images),
+            "--gaussian-noise-std",
+            str(selected["gaussian_noise_std"]),
+            "--fedcsap-hybrid-alpha",
+            str(selected["fedcsap_hybrid_alpha"]),
+            "--num-clients",
+            str(args.num_clients),
+            "--attack",
+            args.attack,
+            "--mal-pcnt",
+            str(args.mal_pcnt),
+            "--rounds",
+            str(args.rounds),
+            "--seed",
+            str(seed),
+        ]
+        if args.attack_config_dir:
+            cmd.extend(["--attack-config-dir", args.attack_config_dir])
+        _run(cmd)
 
-            summary_path = Path(
-                "attack_results/"
-                f"attack_summary_seed{seed}_agg{sc['aggregation']}_"
-                f"alpha{sc['fedcsap_hybrid_alpha']}_noise{sc['gaussian_noise_std']}_bs{args.num_images}.json"
-            )
-            if not summary_path.exists():
-                raise FileNotFoundError(f"Expected summary file not found: {summary_path}")
-            per_seed[name] = _load_summary(summary_path)
+        summary_path = Path(
+            "attack_results/"
+            f"attack_summary_seed{seed}_agg{selected['aggregation']}_"
+            f"alpha{selected['fedcsap_hybrid_alpha']}_"
+            f"noise{selected['gaussian_noise_std']}_bs{args.num_images}.json"
+        )
+        if not summary_path.exists():
+            raise FileNotFoundError(f"Expected summary file not found: {summary_path}")
+        per_seed = _load_summary(summary_path)
 
-        original_images.append(_load_resized_tensor(per_seed["grad"]["target_image_path"]))
-        grad_images.append(_load_resized_tensor(per_seed["grad"]["reconstruction_path"]))
-        grad_noise_images.append(_load_resized_tensor(per_seed["grad_noise"]["reconstruction_path"]))
-        fedcsap_images.append(_load_resized_tensor(per_seed["fedcsap"]["reconstruction_path"]))
+        recon_images.append(_load_resized_tensor(per_seed["reconstruction_path"]))
         all_records.append(
             {
                 "seed": seed,
-                "loss_grad": per_seed["grad"]["reconstruction_loss_opt"],
-                "loss_grad_noise": per_seed["grad_noise"]["reconstruction_loss_opt"],
-                "loss_fedcsap": per_seed["fedcsap"]["reconstruction_loss_opt"],
+                "scenario": args.scenario,
+                "reconstruction_loss_opt": per_seed["reconstruction_loss_opt"],
                 "paths": per_seed,
             }
         )
 
-    original_grid_path = output_dir / "compare16_original_4x4.png"
-    grad_grid_path = output_dir / "compare16_grad_4x4.png"
-    grad_noise_grid_path = output_dir / "compare16_grad_noise_4x4.png"
-    fedcsap_grid_path = output_dir / "compare16_fedcsap_4x4.png"
-    save_4x4_grid(original_images, original_grid_path)
-    save_4x4_grid(grad_images, grad_grid_path)
-    save_4x4_grid(grad_noise_images, grad_noise_grid_path)
-    save_4x4_grid(fedcsap_images, fedcsap_grid_path)
+    grid_path = output_dir / f"compare16_{args.scenario}_4x4.png"
+    save_4x4_grid(recon_images, grid_path)
 
-    json_path = output_dir / "compare16_losses.json"
+    json_path = output_dir / f"compare16_{args.scenario}_losses.json"
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(all_records, f, ensure_ascii=False, indent=2)
 
-    print(f"[done] 原图 4x4 已保存: {original_grid_path}")
-    print(f"[done] 原始梯度重建 4x4 已保存: {grad_grid_path}")
-    print(f"[done] 噪声梯度重建 4x4 已保存: {grad_noise_grid_path}")
-    print(f"[done] FEDCSAP 重建 4x4 已保存: {fedcsap_grid_path}")
+    print(f"[done] {args.scenario} 重建 4x4 已保存: {grid_path}")
     print(f"[done] loss 汇总已保存: {json_path}")
 
 
