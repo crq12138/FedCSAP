@@ -160,23 +160,35 @@ class FLServer:
                 )
                 print(f"[*] 已保存目标客户端真实训练图像至 {target_save_path}")
 
-                # 提取目标梯度（用于重建链路正确性验证）
-                # 注意：客户端上传的是“多步本地训练后的参数”，并非单批次原始梯度。
-                # 直接用参数差做反演会对应“多样本混合信号”，常见现象就是灰图/均值图。
-                # 这里使用目标客户端首个 batch 在全局模型上的真实梯度做基线排查。
+                # 提取攻击输入：
+                # - FEDCSAP 对比方案：使用“混合后更新”构造反演输入；
+                # - 其他方案：保持原有基线方式，使用目标客户端首 batch 在全局模型上的真实梯度。
                 alpha = self.cfg.fedcsap_hybrid_alpha if self.cfg.aggregation == "fedcsap" else 1.0
                 noise_std = self.cfg.gaussian_noise_std
                 attack_model = copy.deepcopy(self.model).to(attack_device)
                 attack_model.load_state_dict(global_state)
                 attack_model.eval()
 
-                attack_x = target_x.to(attack_device)
                 attack_y = target_y.to(attack_device)
-                attack_loss = torch.nn.CrossEntropyLoss(reduction="mean")(attack_model(attack_x), attack_y)
-                pseudo_gradient = torch.autograd.grad(attack_loss, attack_model.parameters(), create_graph=False)
-                pseudo_gradient = [g.detach() for g in pseudo_gradient]
-                if noise_std > 0:
-                    pseudo_gradient = [g + torch.randn_like(g) * noise_std for g in pseudo_gradient]
+                if self.cfg.aggregation == "fedcsap":
+                    # 服务器可见的全局参数更新量 (global_state -> next_state) 映射为伪梯度信号：
+                    #   pseudo_gradient ~= global_state - next_state
+                    pseudo_gradient = []
+                    for name, p in attack_model.named_parameters():
+                        g_prev = global_state[name].to(attack_device)
+                        g_next = next_state[name].to(attack_device)
+                        pseudo_gradient.append((g_prev - g_next).detach())
+                    attack_mode = "Mixed-update"
+                else:
+                    attack_x = target_x.to(attack_device)
+                    attack_loss = torch.nn.CrossEntropyLoss(reduction="mean")(attack_model(attack_x), attack_y)
+                    pseudo_gradient = torch.autograd.grad(
+                        attack_loss, attack_model.parameters(), create_graph=False
+                    )
+                    pseudo_gradient = [g.detach() for g in pseudo_gradient]
+                    if noise_std > 0:
+                        pseudo_gradient = [g + torch.randn_like(g) * noise_std for g in pseudo_gradient]
+                    attack_mode = "Baseline"
 
                 # 规范化统计量必须与 datasets.py 的预处理保持一致：
                 # - CIFAR10: 仅 ToTensor, 无 Normalize -> mean=0, std=1
@@ -193,7 +205,7 @@ class FLServer:
                 else:
                     raise ValueError(f"Unsupported dataset for attack normalization: {self.cfg.dataset}")
                 print(config['total_variation'])
-                print(f"\n[*] 正在对 Client {self.clients[target_client_idx].client_id} 执行梯度反转攻击 (Baseline)...")
+                print(f"\n[*] 正在对 Client {self.clients[target_client_idx].client_id} 执行梯度反转攻击 ({attack_mode})...")
                 print(f"[*] 参数配置: Num Images={attack_num_images}, Alpha={alpha}, Noise={noise_std}")
                 
                 # 设置重建的图像数量严格等于 num_images（默认跟随 batch_size）
