@@ -50,6 +50,92 @@ class FLServer:
             out[k] = global_tensor + alpha * (agg_state[k] - global_tensor)
         return out
 
+    @staticmethod
+    def _gradient_cos_similarity(
+        grad_a: list[torch.Tensor],
+        grad_b: list[torch.Tensor],
+        eps: float = 1e-12,
+    ) -> float:
+        dot = 0.0
+        norm_a = 0.0
+        norm_b = 0.0
+        for ga, gb in zip(grad_a, grad_b):
+            ga_flat = ga.view(-1).float()
+            gb_flat = gb.view(-1).float()
+            dot += float(torch.sum(ga_flat * gb_flat).item())
+            norm_a += float(torch.sum(ga_flat * ga_flat).item())
+            norm_b += float(torch.sum(gb_flat * gb_flat).item())
+        denom = (norm_a ** 0.5) * (norm_b ** 0.5)
+        if denom <= eps:
+            return 0.0
+        return dot / denom
+
+    def _build_targeted_mixed_pseudo_gradient(
+        self,
+        attack_model,
+        target_client_idx: int,
+        target_x: torch.Tensor,
+        target_y: torch.Tensor,
+        num_images: int,
+        device,
+        focus_alpha: float,
+        noise_std: float,
+    ) -> list[torch.Tensor]:
+        if not (0 <= target_client_idx < len(self.clients)):
+            raise IndexError(
+                f"target_client_idx 越界: {target_client_idx}, num_clients={len(self.clients)}"
+            )
+        if len(self.clients) <= 1:
+            raise ValueError("至少需要 2 个参与方才能执行 FEDCSAP 混合伪梯度攻击。")
+
+        criterion = torch.nn.CrossEntropyLoss(reduction="mean")
+
+        clamped_alpha = float(max(0.0, min(1.0, focus_alpha)))
+        client_pseudo_gradients = []
+
+        for idx, client in enumerate(self.clients):
+            if idx == target_client_idx:
+                attack_x_i = target_x.to(device)
+                attack_y_i = target_y.to(device)
+            elif getattr(client, "fixed_batch", False):
+                bx, by = client.get_fixed_batch()
+                if bx.shape[0] < num_images:
+                    raise ValueError(
+                        f"Client {client.client_id} fixed_batch 样本不足: "
+                        f"required={num_images}, got={bx.shape[0]}"
+                    )
+                attack_x_i = bx[:num_images].detach().to(device)
+                attack_y_i = by[:num_images].detach().to(device).long().view(-1)
+            else:
+                bx, by = self._collect_attack_batch(client.train_loader, num_images)
+                attack_x_i = bx.to(device)
+                attack_y_i = by.to(device)
+
+            attack_loss_i = criterion(attack_model(attack_x_i), attack_y_i)
+            pseudo_gradient_i = torch.autograd.grad(
+                attack_loss_i, attack_model.parameters(), create_graph=False
+            )
+            client_pseudo_gradients.append([g.detach() for g in pseudo_gradient_i])
+
+        target_gradient = client_pseudo_gradients[target_client_idx]
+        mix_part = [torch.zeros_like(g) for g in target_gradient]
+
+        for idx, grad_i in enumerate(client_pseudo_gradients):
+            if idx == target_client_idx:
+                continue
+            cos_sim = self._gradient_cos_similarity(target_gradient, grad_i)
+            if cos_sim > 0.0:
+                mix_part = [m + cos_sim * g for m, g in zip(mix_part, grad_i)]
+
+        mix_gradient = [
+            (1.0 - clamped_alpha) * g_target + clamped_alpha * g_mix
+            for g_target, g_mix in zip(target_gradient, mix_part)
+        ]
+        mix_gradient = [g.detach() for g in mix_gradient]
+        if noise_std > 0:
+            mix_gradient = [g + torch.randn_like(g) * noise_std for g in mix_gradient]
+        return mix_gradient
+
     def _load_attack_config(self) -> dict:
         attack_num_images = self.cfg.num_images or self.cfg.batch_size
         config_path = Path(self.cfg.attack_config_dir) / f"bs{attack_num_images}.json"
@@ -171,14 +257,23 @@ class FLServer:
 
                 attack_y = target_y.to(attack_device)
                 if self.cfg.aggregation == "fedcsap":
-                    # 服务器可见的全局参数更新量 (global_state -> next_state) 映射为伪梯度信号：
-                    #   pseudo_gradient ~= global_state - next_state
-                    pseudo_gradient = []
-                    for name, p in attack_model.named_parameters():
-                        g_prev = global_state[name].to(attack_device)
-                        g_next = next_state[name].to(attack_device)
-                        pseudo_gradient.append((g_prev - g_next).detach())
-                    attack_mode = "Mixed-update"
+                    # FedCSAP 攻击输入构造：
+                    # 1) 每个参与方按 baseline 方式计算 pseudo_gradient；
+                    # 2) 计算其他参与方与受害者 pseudo_gradient 的 cos 相似度；
+                    # 3) cos>0 时累加 cos * grad_i 得到 mix_part；
+                    # 4) mix_gradient = grad_victim*(1-alpha) + alpha*mix_part；
+                    # 5) 像 baseline 一样可加入高斯噪声后用于反演攻击。
+                    pseudo_gradient = self._build_targeted_mixed_pseudo_gradient(
+                        attack_model=attack_model,
+                        target_client_idx=target_client_idx,
+                        target_x=target_x,
+                        target_y=target_y,
+                        num_images=attack_num_images,
+                        device=attack_device,
+                        focus_alpha=alpha,
+                        noise_std=noise_std,
+                    )
+                    attack_mode = "Cosine-targeted-mixed"
                 else:
                     attack_x = target_x.to(attack_device)
                     attack_loss = torch.nn.CrossEntropyLoss(reduction="mean")(attack_model(attack_x), attack_y)
