@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 from pathlib import Path
 from statistics import mean
 from typing import Callable
@@ -178,11 +179,20 @@ def read_global_macro_f1_max(runs_dir: Path, run_ids: range) -> dict:
                 invalid_values.append(f"{csv_path} [row {row_idx}] (empty global_macro_f1)")
                 continue
             try:
-                run_f1_values.append(float(raw_f1))
+                f1_value = float(raw_f1)
             except ValueError:
                 invalid_values.append(
                     f"{csv_path} [row {row_idx}] (invalid global_macro_f1={raw_f1})"
                 )
+                continue
+
+            if not math.isfinite(f1_value):
+                invalid_values.append(
+                    f"{csv_path} [row {row_idx}] (non-finite global_macro_f1={raw_f1})"
+                )
+                continue
+
+            run_f1_values.append(f1_value)
 
         if run_f1_values:
             max_values[run_id] = max(run_f1_values)
