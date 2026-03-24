@@ -11,7 +11,7 @@ from statistics import mean
 from typing import Callable
 
 
-MetricHandler = Callable[[Path, range], dict]
+MetricHandler = Callable[[Path, range, int], dict]
 
 
 class DataReadError(Exception):
@@ -29,13 +29,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--start-run",
-        type=int,
         required=True,
         help="起始 run 编号，例如 225",
     )
     parser.add_argument(
         "--end-run",
-        type=int,
         required=True,
         help="结束 run 编号，例如 300",
     )
@@ -60,7 +58,29 @@ def parse_run_range(start_run: int, end_run: int) -> range:
     return range(start_run, end_run + 1)
 
 
-def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
+def parse_run_bounds(start_run: str, end_run: str) -> tuple[int, int, int]:
+    start_run_str = start_run.strip()
+    end_run_str = end_run.strip()
+    if not start_run_str.isdigit() or not end_run_str.isdigit():
+        raise DataReadError("run 编号必须为数字字符串，例如 009 或 225。")
+
+    start_run_int = int(start_run_str)
+    end_run_int = int(end_run_str)
+    width = max(len(start_run_str), len(end_run_str))
+
+    return start_run_int, end_run_int, width
+
+
+def resolve_run_csv_path(runs_dir: Path, run_id: int, run_id_width: int, filename: str) -> Path:
+    padded = runs_dir / f"run_{run_id:0{run_id_width}d}" / filename
+    if padded.exists():
+        return padded
+
+    plain = runs_dir / f"run_{run_id}" / filename
+    return plain
+
+
+def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range, run_id_width: int) -> dict:
     accuracies: list[float] = []
     per_run_averages: dict[int, float] = {}
     missing_files: list[str] = []
@@ -70,7 +90,12 @@ def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
     no_valid_accuracy_runs: list[str] = []
 
     for run_id in run_ids:
-        csv_path = runs_dir / f"run_{run_id}" / "posiontest_result.csv"
+        csv_path = resolve_run_csv_path(
+            runs_dir,
+            run_id,
+            run_id_width,
+            "posiontest_result.csv",
+        )
         if not csv_path.exists():
             missing_files.append(str(csv_path))
             continue
@@ -146,7 +171,7 @@ def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
     }
 
 
-def read_global_macro_f1_max(runs_dir: Path, run_ids: range) -> dict:
+def read_global_macro_f1_max(runs_dir: Path, run_ids: range, run_id_width: int) -> dict:
     max_values: dict[int, float] = {}
     missing_files: list[str] = []
     empty_rows: list[str] = []
@@ -155,7 +180,12 @@ def read_global_macro_f1_max(runs_dir: Path, run_ids: range) -> dict:
     no_valid_f1_runs: list[str] = []
 
     for run_id in run_ids:
-        csv_path = runs_dir / f"run_{run_id}" / "global_metrics.csv"
+        csv_path = resolve_run_csv_path(
+            runs_dir,
+            run_id,
+            run_id_width,
+            "global_metrics.csv",
+        )
         if not csv_path.exists():
             missing_files.append(str(csv_path))
             continue
@@ -179,20 +209,11 @@ def read_global_macro_f1_max(runs_dir: Path, run_ids: range) -> dict:
                 invalid_values.append(f"{csv_path} [row {row_idx}] (empty global_macro_f1)")
                 continue
             try:
-                f1_value = float(raw_f1)
+                run_f1_values.append(float(raw_f1))
             except ValueError:
                 invalid_values.append(
                     f"{csv_path} [row {row_idx}] (invalid global_macro_f1={raw_f1})"
                 )
-                continue
-
-            if not math.isfinite(f1_value):
-                invalid_values.append(
-                    f"{csv_path} [row {row_idx}] (non-finite global_macro_f1={raw_f1})"
-                )
-                continue
-
-            run_f1_values.append(f1_value)
 
         if run_f1_values:
             max_values[run_id] = max(run_f1_values)
@@ -245,9 +266,10 @@ def get_task_handlers() -> dict[str, MetricHandler]:
     }
 
 
-def write_summary(output_dir: Path, start_run: int, end_run: int, summary: dict) -> Path:
+def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     out_file = output_dir / f"{summary['task']}_run_{start_run}_to_{end_run}.csv"
+    run_label_width = max(len(start_run), len(end_run))
 
     rows = [
         ("task", summary["task"]),
@@ -264,9 +286,10 @@ def write_summary(output_dir: Path, start_run: int, end_run: int, summary: dict)
         rows.insert(4, ("accuracy_avg", f"{summary['accuracy_avg']:.10f}"))
         rows.append(("no_valid_accuracy_runs", len(summary["no_valid_accuracy_runs"])))
         for run_id in sorted(summary["per_run_averages"]):
+            run_label = f"{run_id:0{run_label_width}d}"
             rows.append(
                 (
-                    f"run_{run_id}_accuracy_avg",
+                    f"run_{run_label}_accuracy_avg",
                     f"{summary['per_run_averages'][run_id]:.10f}",
                 )
             )
@@ -274,9 +297,10 @@ def write_summary(output_dir: Path, start_run: int, end_run: int, summary: dict)
         rows.insert(3, ("max_global_macro_f1_avg", f"{summary['max_global_macro_f1_avg']:.10f}"))
         rows.append(("no_valid_f1_runs", len(summary["no_valid_f1_runs"])))
         for run_id in sorted(summary["per_run_max_global_macro_f1"]):
+            run_label = f"{run_id:0{run_label_width}d}"
             rows.append(
                 (
-                    f"run_{run_id}_global_macro_f1_max",
+                    f"run_{run_label}_global_macro_f1_max",
                     f"{summary['per_run_max_global_macro_f1'][run_id]:.10f}",
                 )
             )
@@ -296,14 +320,15 @@ def main() -> None:
     if not runs_dir.exists() or not runs_dir.is_dir():
         raise DataReadError(f"runs 目录不存在或不是文件夹: {runs_dir}")
 
-    run_ids = parse_run_range(args.start_run, args.end_run)
+    start_run_int, end_run_int, run_id_width = parse_run_bounds(args.start_run, args.end_run)
+    run_ids = parse_run_range(start_run_int, end_run_int)
     handlers = get_task_handlers()
 
     if args.task not in handlers:
         available = ", ".join(sorted(handlers))
         raise DataReadError(f"未知 task: {args.task}。可选 task: {available}")
 
-    summary = handlers[args.task](runs_dir, run_ids)
+    summary = handlers[args.task](runs_dir, run_ids, run_id_width)
     out_file = write_summary(Path(args.output_dir), args.start_run, args.end_run, summary)
 
     print("读取完成。")
