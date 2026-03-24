@@ -61,10 +61,12 @@ def parse_run_range(start_run: int, end_run: int) -> range:
 
 def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
     accuracies: list[float] = []
+    per_run_averages: dict[int, float] = {}
     missing_files: list[str] = []
     empty_rows: list[str] = []
     missing_columns: list[str] = []
     invalid_values: list[str] = []
+    no_valid_accuracy_runs: list[str] = []
 
     for run_id in run_ids:
         csv_path = runs_dir / f"run_{run_id}" / "posiontest_result.csv"
@@ -83,6 +85,8 @@ def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
         if "accuracy" not in reader.fieldnames if reader.fieldnames else True:
             missing_columns.append(str(csv_path))
             continue
+        
+        run_accuracies: list[float] = []
 
         for row_idx, row in enumerate(rows, start=1):
             raw_accuracy = row.get("accuracy")
@@ -90,14 +94,20 @@ def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
                 invalid_values.append(f"{csv_path} [row {row_idx}] (empty accuracy)")
                 continue
             try:
-                accuracies.append(float(raw_accuracy))
+                accuracy = float(raw_accuracy)
+                run_accuracies.append(accuracy)
+                accuracies.append(accuracy)
             except ValueError:
                 invalid_values.append(
                     f"{csv_path} [row {row_idx}] (invalid accuracy={raw_accuracy})"
                 )
+        if run_accuracies:
+            per_run_averages[run_id] = mean(run_accuracies)
+        else:
+            no_valid_accuracy_runs.append(str(csv_path))
 
-    if not accuracies:
-        error_messages = ["未读取到可用 accuracy 数据，无法计算平均值。"]
+    if not per_run_averages:
+        error_messages = ["未读取到可用 poisontest accuracy 数据，无法计算每个 run 的均值。"]
         if missing_files:
             error_messages.append(
                 f"缺失文件数: {len(missing_files)}（示例: {missing_files[0]}）"
@@ -114,17 +124,24 @@ def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
             error_messages.append(
                 f"无效 accuracy 数值数: {len(invalid_values)}（示例: {invalid_values[0]}）"
             )
+        if no_valid_accuracy_runs:
+            error_messages.append(
+                f"无有效 accuracy 的 run 文件数: {len(no_valid_accuracy_runs)}（示例: {no_valid_accuracy_runs[0]}）"
+            )
         raise DataReadError("\n".join(error_messages))
 
     return {
         "task": "poisontest_accuracy_avg",
         "total_runs": len(run_ids),
+        "valid_run_count": len(per_run_averages),
         "valid_accuracy_count": len(accuracies),
-        "accuracy_avg": mean(accuracies),
+        "accuracy_avg": mean(per_run_averages.values()),
+        "per_run_averages": per_run_averages,
         "missing_files": missing_files,
         "empty_rows": empty_rows,
         "missing_columns": missing_columns,
         "invalid_values": invalid_values,
+        "no_valid_accuracy_runs": no_valid_accuracy_runs,
     }
 
 
@@ -142,13 +159,23 @@ def write_summary(output_dir: Path, start_run: int, end_run: int, summary: dict)
     rows = [
         ("task", summary["task"]),
         ("total_runs", summary["total_runs"]),
+        ("valid_run_count", summary["valid_run_count"]),
         ("valid_accuracy_count", summary["valid_accuracy_count"]),
         ("accuracy_avg", f"{summary['accuracy_avg']:.10f}"),
         ("missing_files", len(summary["missing_files"])),
         ("empty_rows", len(summary["empty_rows"])),
         ("missing_columns", len(summary["missing_columns"])),
         ("invalid_values", len(summary["invalid_values"])),
+        ("no_valid_accuracy_runs", len(summary["no_valid_accuracy_runs"])),
     ]
+    for run_id in sorted(summary["per_run_averages"]):
+        rows.append(
+            (
+                f"run_{run_id}_accuracy_avg",
+                f"{summary['per_run_averages'][run_id]:.10f}",
+            )
+        )
+
 
     with out_file.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -178,6 +205,7 @@ def main() -> None:
     print("读取完成。")
     print(f"任务: {summary['task']}")
     print(f"run 范围: run_{args.start_run} 到 run_{args.end_run}")
+    print(f"有效 run 数量: {summary['valid_run_count']}")
     print(f"可用 accuracy 数量: {summary['valid_accuracy_count']}")
     print(f"平均 accuracy: {summary['accuracy_avg']:.10f}")
     print(f"输出文件: {out_file}")

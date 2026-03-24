@@ -27,12 +27,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attack", default="none")
     parser.add_argument("--mal-pcnt", type=float, default=0.0)
     parser.add_argument("--rounds", type=int, default=1)
-    parser.add_argument(
+    fixed_batch_group = parser.add_mutually_exclusive_group()
+    fixed_batch_group.add_argument(
         "--fixed-batch",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Whether to pass --fixed-batch to the FL command (default: enabled).",
+        dest="fixed_batch",
+        action="store_true",
+        help="Pass --fixed-batch to the FL command.",
     )
+    fixed_batch_group.add_argument(
+        "--no-fixed-batch",
+        dest="fixed_batch",
+        action="store_false",
+        help="Do not pass --fixed-batch to the FL command.",
+    )
+    parser.set_defaults(fixed_batch=True)
     parser.add_argument(
         "--output-root",
         default="grid_search_runs",
@@ -64,6 +72,8 @@ def write_attack_config(path: Path, *, tv: float, bn_stat: bool, bn_reg: float, 
         "signed": True,
         "boxed": True,
         "cost_fn": "sim",
+        "indices": "def",
+        "weights": "equal",
         "lr": 0.1,
         "optim": "adam",
         "restarts": 1,
@@ -71,8 +81,6 @@ def write_attack_config(path: Path, *, tv: float, bn_stat: bool, bn_reg: float, 
         "total_variation": tv,
         "bn_stat": bn_stat,
         "bn_reg_scale": bn_reg,
-        "z_norm": 0,
-        "group_lazy": 0,
         "init": "randn",
         "filter": "none",
         "lr_decay": True,

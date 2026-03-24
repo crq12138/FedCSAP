@@ -20,9 +20,15 @@ CONFIG_FILE=${CONFIG_FILE:-scripts/configs/exp_04_dba_runs.csv}
 PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 DRY_RUN=${DRY_RUN:-0}
 export PYTORCH_CUDA_ALLOC_CONF
+POISONING_PER_BATCH=${POISONING_PER_BATCH:-5}
 
 if ! [[ "${MAX_PARALLEL}" =~ ^[1-9][0-9]*$ ]]; then
   echo "MAX_PARALLEL must be a positive integer, got: ${MAX_PARALLEL}" >&2
+  exit 1
+fi
+
+if ! [[ "${POISONING_PER_BATCH}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "POISONING_PER_BATCH must be a positive integer, got: ${POISONING_PER_BATCH}" >&2
   exit 1
 fi
 
@@ -84,6 +90,7 @@ start_run() {
     --attack_methods="${attack_method}"
     --"number_of_adversary_${attack_method}"="${adversary_count}"
     --mal_pcnt="${mal_pcnt}"
+    --poisoning_per_batch="${POISONING_PER_BATCH}"
     --resumed_model=false
     --epochs="${epochs}"
     --number_of_total_participants=25

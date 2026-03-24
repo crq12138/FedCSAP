@@ -1,18 +1,17 @@
-
 {
-  "signed": true,
+  "signed": false,
   "cost_fn": "sim",
   "indices": "def",
   "weights": "equal",
-  "lr": 0.05,
+  "lr": 0.1,
   "optim": "adam",
   "restarts": 1,
   "max_iterations": 10000,
   "total_variation": 0.001,
-  "bn_stat": false,
-  "bn_reg_scale": 0.02,
   "init": "randn",
   "filter": "none",
+  "bn_stat": true,
+  "bn_reg_scale": 0.02,
   "lr_decay": true,
   "scoring_choice": "loss"
 }

@@ -79,7 +79,6 @@ class FLServer:
         num_images: int,
         device,
         focus_alpha: float,
-        noise_std: float,
     ) -> list[torch.Tensor]:
         if not (0 <= target_client_idx < len(self.clients)):
             raise IndexError(
@@ -132,8 +131,6 @@ class FLServer:
             for g_target, g_mix in zip(target_gradient, mix_part)
         ]
         mix_gradient = [g.detach() for g in mix_gradient]
-        if noise_std > 0:
-            mix_gradient = [g + torch.randn_like(g) * noise_std for g in mix_gradient]
         return mix_gradient
 
     def _load_attack_config(self) -> dict:
@@ -271,7 +268,6 @@ class FLServer:
                         num_images=attack_num_images,
                         device=attack_device,
                         focus_alpha=alpha,
-                        noise_std=noise_std,
                     )
                     attack_mode = "Cosine-targeted-mixed"
                 else:

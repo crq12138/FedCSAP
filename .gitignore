@@ -32,3 +32,5 @@ plot_utils.py
 plot_utils_backup.py
 runs/
 *.log
+attack_results/*
+result/*

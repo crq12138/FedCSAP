@@ -1,6 +1,6 @@
 {
   "target_client_id": 1,
-  "batch_size": 16,
+  "num_images": 16,
   "dataset": "cifar10",
   "ground_truth_labels": [
     9,
