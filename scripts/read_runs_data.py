@@ -10,7 +10,7 @@ from statistics import mean
 from typing import Callable
 
 
-MetricHandler = Callable[[Path], dict]
+MetricHandler = Callable[[Path, range], dict]
 
 
 class DataReadError(Exception):
@@ -145,10 +145,93 @@ def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range) -> dict:
     }
 
 
+def read_global_macro_f1_max(runs_dir: Path, run_ids: range) -> dict:
+    max_values: dict[int, float] = {}
+    missing_files: list[str] = []
+    empty_rows: list[str] = []
+    missing_columns: list[str] = []
+    invalid_values: list[str] = []
+    no_valid_f1_runs: list[str] = []
+
+    for run_id in run_ids:
+        csv_path = runs_dir / f"run_{run_id}" / "global_metrics.csv"
+        if not csv_path.exists():
+            missing_files.append(str(csv_path))
+            continue
+
+        with csv_path.open("r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        if not rows:
+            empty_rows.append(str(csv_path))
+            continue
+
+        if "global_macro_f1" not in reader.fieldnames if reader.fieldnames else True:
+            missing_columns.append(str(csv_path))
+            continue
+
+        run_f1_values: list[float] = []
+        for row_idx, row in enumerate(rows, start=1):
+            raw_f1 = row.get("global_macro_f1")
+            if raw_f1 is None or str(raw_f1).strip() == "":
+                invalid_values.append(f"{csv_path} [row {row_idx}] (empty global_macro_f1)")
+                continue
+            try:
+                run_f1_values.append(float(raw_f1))
+            except ValueError:
+                invalid_values.append(
+                    f"{csv_path} [row {row_idx}] (invalid global_macro_f1={raw_f1})"
+                )
+
+        if run_f1_values:
+            max_values[run_id] = max(run_f1_values)
+        else:
+            no_valid_f1_runs.append(str(csv_path))
+
+    if not max_values:
+        error_messages = ["未读取到可用 global_macro_f1 数据，无法提取每个 run 的最大值。"]
+        if missing_files:
+            error_messages.append(
+                f"缺失文件数: {len(missing_files)}（示例: {missing_files[0]}）"
+            )
+        if empty_rows:
+            error_messages.append(
+                f"空文件数: {len(empty_rows)}（示例: {empty_rows[0]}）"
+            )
+        if missing_columns:
+            error_messages.append(
+                f"缺失 global_macro_f1 列文件数: {len(missing_columns)}（示例: {missing_columns[0]}）"
+            )
+        if invalid_values:
+            error_messages.append(
+                f"无效 global_macro_f1 数值数: {len(invalid_values)}（示例: {invalid_values[0]}）"
+            )
+        if no_valid_f1_runs:
+            error_messages.append(
+                f"无有效 global_macro_f1 的 run 文件数: {len(no_valid_f1_runs)}（示例: {no_valid_f1_runs[0]}）"
+            )
+        raise DataReadError("\n".join(error_messages))
+
+    return {
+        "task": "global_macro_f1_max",
+        "total_runs": len(run_ids),
+        "valid_run_count": len(max_values),
+        "max_global_macro_f1_avg": mean(max_values.values()),
+        "per_run_max_global_macro_f1": max_values,
+        "missing_files": missing_files,
+        "empty_rows": empty_rows,
+        "missing_columns": missing_columns,
+        "invalid_values": invalid_values,
+        "no_valid_f1_runs": no_valid_f1_runs,
+    }
+
+
 def get_task_handlers() -> dict[str, MetricHandler]:
     """任务注册表：为后续功能扩展预留接口。"""
     return {
         "poisontest_accuracy_avg": read_poisontest_accuracy_avg,
+        "global_macro_f1_max": read_global_macro_f1_max,
     }
 
 
@@ -160,22 +243,33 @@ def write_summary(output_dir: Path, start_run: int, end_run: int, summary: dict)
         ("task", summary["task"]),
         ("total_runs", summary["total_runs"]),
         ("valid_run_count", summary["valid_run_count"]),
-        ("valid_accuracy_count", summary["valid_accuracy_count"]),
-        ("accuracy_avg", f"{summary['accuracy_avg']:.10f}"),
         ("missing_files", len(summary["missing_files"])),
         ("empty_rows", len(summary["empty_rows"])),
         ("missing_columns", len(summary["missing_columns"])),
         ("invalid_values", len(summary["invalid_values"])),
-        ("no_valid_accuracy_runs", len(summary["no_valid_accuracy_runs"])),
     ]
-    for run_id in sorted(summary["per_run_averages"]):
-        rows.append(
-            (
-                f"run_{run_id}_accuracy_avg",
-                f"{summary['per_run_averages'][run_id]:.10f}",
-            )
-        )
 
+    if summary["task"] == "poisontest_accuracy_avg":
+        rows.insert(3, ("valid_accuracy_count", summary["valid_accuracy_count"]))
+        rows.insert(4, ("accuracy_avg", f"{summary['accuracy_avg']:.10f}"))
+        rows.append(("no_valid_accuracy_runs", len(summary["no_valid_accuracy_runs"])))
+        for run_id in sorted(summary["per_run_averages"]):
+            rows.append(
+                (
+                    f"run_{run_id}_accuracy_avg",
+                    f"{summary['per_run_averages'][run_id]:.10f}",
+                )
+            )
+    elif summary["task"] == "global_macro_f1_max":
+        rows.insert(3, ("max_global_macro_f1_avg", f"{summary['max_global_macro_f1_avg']:.10f}"))
+        rows.append(("no_valid_f1_runs", len(summary["no_valid_f1_runs"])))
+        for run_id in sorted(summary["per_run_max_global_macro_f1"]):
+            rows.append(
+                (
+                    f"run_{run_id}_global_macro_f1_max",
+                    f"{summary['per_run_max_global_macro_f1'][run_id]:.10f}",
+                )
+            )
 
     with out_file.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -206,8 +300,11 @@ def main() -> None:
     print(f"任务: {summary['task']}")
     print(f"run 范围: run_{args.start_run} 到 run_{args.end_run}")
     print(f"有效 run 数量: {summary['valid_run_count']}")
-    print(f"可用 accuracy 数量: {summary['valid_accuracy_count']}")
-    print(f"平均 accuracy: {summary['accuracy_avg']:.10f}")
+    if summary["task"] == "poisontest_accuracy_avg":
+        print(f"可用 accuracy 数量: {summary['valid_accuracy_count']}")
+        print(f"平均 accuracy: {summary['accuracy_avg']:.10f}")
+    elif summary["task"] == "global_macro_f1_max":
+        print(f"平均最大 global_macro_f1: {summary['max_global_macro_f1_avg']:.10f}")
     print(f"输出文件: {out_file}")
 
 
