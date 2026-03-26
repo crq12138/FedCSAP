@@ -266,9 +266,12 @@ def get_task_handlers() -> dict[str, MetricHandler]:
     }
 
 
-def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict) -> Path:
+def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict) -> tuple[Path, Path | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    out_file = output_dir / f"{summary['task']}_run_{start_run}_to_{end_run}.csv"
+    base_filename = f"{summary['task']}_run_{start_run}_to_{end_run}"
+    out_file = output_dir / f"{base_filename}.csv"
+    extra_out_file = None
+    
     run_label_width = max(len(start_run), len(end_run))
 
     rows = [
@@ -296,21 +299,30 @@ def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict)
     elif summary["task"] == "global_macro_f1_max":
         rows.insert(3, ("max_global_macro_f1_avg", f"{summary['max_global_macro_f1_avg']:.10f}"))
         rows.append(("no_valid_f1_runs", len(summary["no_valid_f1_runs"])))
-        for run_id in sorted(summary["per_run_max_global_macro_f1"]):
-            run_label = f"{run_id:0{run_label_width}d}"
-            rows.append(
-                (
-                    f"run_{run_label}_global_macro_f1_max",
-                    f"{summary['per_run_max_global_macro_f1'][run_id]:.10f}",
+        
+        # 新增：额外写入纯数值文件的逻辑
+        extra_out_file = output_dir / f"{base_filename}_raw_values.txt"
+        with extra_out_file.open("w", encoding="utf-8") as ef:
+            for run_id in sorted(summary["per_run_max_global_macro_f1"]):
+                run_label = f"{run_id:0{run_label_width}d}"
+                f1_value = summary['per_run_max_global_macro_f1'][run_id]
+                
+                # 写入汇总表
+                rows.append(
+                    (
+                        f"run_{run_label}_global_macro_f1_max",
+                        f"{f1_value:.10f}",
+                    )
                 )
-            )
+                # 写入纯数值表（附带换行符）
+                ef.write(f"{f1_value:.10f}\n")
 
     with out_file.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["metric", "value"])
         writer.writerows(rows)
 
-    return out_file
+    return out_file, extra_out_file
 
 
 def main() -> None:
@@ -329,7 +341,7 @@ def main() -> None:
         raise DataReadError(f"未知 task: {args.task}。可选 task: {available}")
 
     summary = handlers[args.task](runs_dir, run_ids, run_id_width)
-    out_file = write_summary(Path(args.output_dir), args.start_run, args.end_run, summary)
+    out_file, extra_out_file = write_summary(Path(args.output_dir), args.start_run, args.end_run, summary)
 
     print("读取完成。")
     print(f"任务: {summary['task']}")
@@ -340,7 +352,11 @@ def main() -> None:
         print(f"平均 accuracy: {summary['accuracy_avg']:.10f}")
     elif summary["task"] == "global_macro_f1_max":
         print(f"平均最大 global_macro_f1: {summary['max_global_macro_f1_avg']:.10f}")
-    print(f"输出文件: {out_file}")
+    print(f"输出汇总文件: {out_file}")
+    
+    # 终端回显纯数值文件的生成情况
+    if extra_out_file:
+        print(f"输出纯数值文件: {extra_out_file}")
 
 
 if __name__ == "__main__":

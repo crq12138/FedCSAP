@@ -107,11 +107,22 @@ start_run() {
     cmd+=(--bijective_flshield)
   fi
 
+  if [[ "${attack_method}" == "dba" ]]; then
+    local poisoning_per_batch=10
+    if [[ "${aggregation_method}" == "fedcsap" ]]; then
+      poisoning_per_batch=5
+    elif [[ "${aggregation_method}" == "median" || "${aggregation_method}" == "krum" ]]; then
+      poisoning_per_batch=15
+    fi
+    cmd+=(--poisoning_per_batch="${poisoning_per_batch}")
+  fi
+  
   if [[ "${DRY_RUN}" == "1" ]]; then
     printf 'DRY_RUN: %q ' "${cmd[@]}"
     echo
     return 0
   fi
+
 
   prepare_run_folder "${run_tag}"
 
