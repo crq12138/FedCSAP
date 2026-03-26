@@ -261,6 +261,8 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
     client_ids = list(range(25))
     per_run_last_r: dict[int, dict[int, float]] = {}
     per_run_committee_takeover_count: dict[int, int] = {}
+    per_run_committee_elected_count: dict[int, dict[int, int]] = {}
+    per_run_is_malicious: dict[int, dict[int, float]] = {}
     missing_files: list[str] = []
     empty_rows: list[str] = []
     missing_columns: list[str] = []
@@ -295,13 +297,52 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
             empty_rows.append(str(client_csv))
             continue
 
-        required_client_columns = {"client_id", "R"}
+        required_client_columns = {"client_id", "R", "is_malicious"}
         client_fieldnames = set(client_reader.fieldnames or [])
         if not required_client_columns.issubset(client_fieldnames):
             missing_columns.append(str(client_csv))
             continue
 
         last_r_by_client: dict[int, float] = {}
+        appearance_count_by_client: dict[int, int] = {cid: 0 for cid in client_ids}
+        is_malicious_observed_values: dict[int, set[int]] = {cid: set() for cid in client_ids}
+
+        for row_idx, row in enumerate(client_rows, start=1):
+            raw_client_id = row.get("client_id")
+            raw_is_malicious = row.get("is_malicious")
+
+            if raw_client_id is None or str(raw_client_id).strip() == "":
+                invalid_values.append(f"{client_csv} [row {row_idx}] (empty client_id)")
+                continue
+
+            try:
+                client_id = int(raw_client_id)
+            except ValueError:
+                invalid_values.append(
+                    f"{client_csv} [row {row_idx}] (invalid client_id={raw_client_id})"
+                )
+                continue
+
+            if client_id not in client_ids:
+                continue
+
+            appearance_count_by_client[client_id] += 1
+
+            if raw_is_malicious is None or str(raw_is_malicious).strip() == "":
+                invalid_values.append(
+                    f"{client_csv} [row {row_idx}] (empty is_malicious for client_id={client_id})"
+                )
+            else:
+                try:
+                    is_malicious_val = int(float(raw_is_malicious))
+                    if is_malicious_val not in (0, 1):
+                        raise ValueError
+                    is_malicious_observed_values[client_id].add(is_malicious_val)
+                except ValueError:
+                    invalid_values.append(
+                        f"{client_csv} [row {row_idx}] (invalid is_malicious={raw_is_malicious} for client_id={client_id})"
+                    )
+
         for row_idx, row in enumerate(reversed(client_rows), start=1):
             raw_client_id = row.get("client_id")
             raw_r = row.get("R")
@@ -330,6 +371,18 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
                 last_r_by_client[client_id] = r_value
                 if len(last_r_by_client) == len(client_ids):
                     break
+
+        is_malicious_by_client: dict[int, float] = {}
+        for cid in client_ids:
+            observed = is_malicious_observed_values[cid]
+            if not observed:
+                is_malicious_by_client[cid] = math.nan
+                continue
+            if len(observed) > 1:
+                invalid_values.append(
+                    f"{client_csv} (conflicting is_malicious values for client_id={cid}: {sorted(observed)})"
+                )
+            is_malicious_by_client[cid] = float(max(observed))
 
         with round_csv.open("r", encoding="utf-8", newline="") as f:
             round_reader = csv.DictReader(f)
@@ -361,8 +414,16 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
             if takeover_value != 0:
                 committee_takeover_count += 1
 
+        total_round_count = len(round_rows)
+        committee_elected_count_by_client = {
+            cid: max(total_round_count - appearance_count_by_client[cid], 0)
+            for cid in client_ids
+        }
+
         per_run_last_r[run_id] = {cid: last_r_by_client.get(cid, math.nan) for cid in client_ids}
         per_run_committee_takeover_count[run_id] = committee_takeover_count
+        per_run_committee_elected_count[run_id] = committee_elected_count_by_client
+        per_run_is_malicious[run_id] = is_malicious_by_client
 
     if not per_run_last_r:
         error_messages = ["未读取到可用 FedCSAP client/round metrics 数据。"]
@@ -390,6 +451,8 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
         "valid_run_count": len(per_run_last_r),
         "per_run_last_r": per_run_last_r,
         "per_run_committee_takeover_count": per_run_committee_takeover_count,
+        "per_run_committee_elected_count": per_run_committee_elected_count,
+        "per_run_is_malicious": per_run_is_malicious,
         "missing_files": missing_files,
         "empty_rows": empty_rows,
         "missing_columns": missing_columns,
@@ -465,6 +528,8 @@ def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict)
             writer.writerow([
                 "run_id",
                 *[f"client_{cid}_last_R" for cid in range(25)],
+                *[f"client_{cid}_committee_elected_count" for cid in range(25)],
+                *[f"client_{cid}_is_malicious" for cid in range(25)],
                 "committee_takeover_count",
             ])
             for run_id in sorted(summary["per_run_last_r"]):
@@ -473,10 +538,20 @@ def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict)
                 rows.append((f"run_{run_label}_committee_takeover_count", takeover_count))
 
                 per_client = summary["per_run_last_r"][run_id]
+                per_client_committee_elected_count = summary["per_run_committee_elected_count"][run_id]
+                per_client_is_malicious = summary["per_run_is_malicious"][run_id]
                 writer.writerow([
                     run_label,
                     *[
                         "" if math.isnan(per_client[cid]) else f"{per_client[cid]:.10f}"
+                        for cid in range(25)
+                    ],
+                    *[
+                        per_client_committee_elected_count[cid]
+                        for cid in range(25)
+                    ],
+                    *[
+                        "" if math.isnan(per_client_is_malicious[cid]) else int(per_client_is_malicious[cid])
                         for cid in range(25)
                     ],
                     takeover_count,
