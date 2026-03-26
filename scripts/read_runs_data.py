@@ -257,12 +257,152 @@ def read_global_macro_f1_max(runs_dir: Path, run_ids: range, run_id_width: int) 
         "no_valid_f1_runs": no_valid_f1_runs,
     }
 
+def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, run_id_width: int) -> dict:
+    client_ids = list(range(25))
+    per_run_last_r: dict[int, dict[int, float]] = {}
+    per_run_committee_takeover_count: dict[int, int] = {}
+    missing_files: list[str] = []
+    empty_rows: list[str] = []
+    missing_columns: list[str] = []
+    invalid_values: list[str] = []
+
+    for run_id in run_ids:
+        client_csv = resolve_run_csv_path(
+            runs_dir,
+            run_id,
+            run_id_width,
+            "fedcsap_client_metrics.csv",
+        )
+        round_csv = resolve_run_csv_path(
+            runs_dir,
+            run_id,
+            run_id_width,
+            "fedcsap_round_metrics.csv",
+        )
+
+        if not client_csv.exists():
+            missing_files.append(str(client_csv))
+            continue
+        if not round_csv.exists():
+            missing_files.append(str(round_csv))
+            continue
+
+        with client_csv.open("r", encoding="utf-8", newline="") as f:
+            client_reader = csv.DictReader(f)
+            client_rows = list(client_reader)
+
+        if not client_rows:
+            empty_rows.append(str(client_csv))
+            continue
+
+        required_client_columns = {"client_id", "R"}
+        client_fieldnames = set(client_reader.fieldnames or [])
+        if not required_client_columns.issubset(client_fieldnames):
+            missing_columns.append(str(client_csv))
+            continue
+
+        last_r_by_client: dict[int, float] = {}
+        for row_idx, row in enumerate(reversed(client_rows), start=1):
+            raw_client_id = row.get("client_id")
+            raw_r = row.get("R")
+            if raw_client_id is None or str(raw_client_id).strip() == "":
+                invalid_values.append(f"{client_csv} [from_end_row {row_idx}] (empty client_id)")
+                continue
+            if raw_r is None or str(raw_r).strip() == "":
+                invalid_values.append(
+                    f"{client_csv} [from_end_row {row_idx}] (empty R for client_id={raw_client_id})"
+                )
+                continue
+
+            try:
+                client_id = int(raw_client_id)
+                r_value = float(raw_r)
+            except ValueError:
+                invalid_values.append(
+                    f"{client_csv} [from_end_row {row_idx}] (invalid client_id={raw_client_id} or R={raw_r})"
+                )
+                continue
+
+            if client_id not in client_ids:
+                continue
+
+            if client_id not in last_r_by_client:
+                last_r_by_client[client_id] = r_value
+                if len(last_r_by_client) == len(client_ids):
+                    break
+
+        with round_csv.open("r", encoding="utf-8", newline="") as f:
+            round_reader = csv.DictReader(f)
+            round_rows = list(round_reader)
+
+        if not round_rows:
+            empty_rows.append(str(round_csv))
+            continue
+
+        if "committee_takeover" not in round_reader.fieldnames if round_reader.fieldnames else True:
+            missing_columns.append(str(round_csv))
+            continue
+
+        committee_takeover_count = 0
+        for row_idx, row in enumerate(round_rows, start=1):
+            raw_takeover = row.get("committee_takeover")
+            if raw_takeover is None or str(raw_takeover).strip() == "":
+                invalid_values.append(
+                    f"{round_csv} [row {row_idx}] (empty committee_takeover)"
+                )
+                continue
+            try:
+                takeover_value = float(raw_takeover)
+            except ValueError:
+                invalid_values.append(
+                    f"{round_csv} [row {row_idx}] (invalid committee_takeover={raw_takeover})"
+                )
+                continue
+            if takeover_value != 0:
+                committee_takeover_count += 1
+
+        per_run_last_r[run_id] = {cid: last_r_by_client.get(cid, math.nan) for cid in client_ids}
+        per_run_committee_takeover_count[run_id] = committee_takeover_count
+
+    if not per_run_last_r:
+        error_messages = ["未读取到可用 FedCSAP client/round metrics 数据。"]
+        if missing_files:
+            error_messages.append(
+                f"缺失文件数: {len(missing_files)}（示例: {missing_files[0]}）"
+            )
+        if empty_rows:
+            error_messages.append(
+                f"空文件数: {len(empty_rows)}（示例: {empty_rows[0]}）"
+            )
+        if missing_columns:
+            error_messages.append(
+                f"缺失列文件数: {len(missing_columns)}（示例: {missing_columns[0]}）"
+            )
+        if invalid_values:
+            error_messages.append(
+                f"无效数值数: {len(invalid_values)}（示例: {invalid_values[0]}）"
+            )
+        raise DataReadError("\n".join(error_messages))
+
+    return {
+        "task": "fedcsap_last_r_and_committee_takeover",
+        "total_runs": len(run_ids),
+        "valid_run_count": len(per_run_last_r),
+        "per_run_last_r": per_run_last_r,
+        "per_run_committee_takeover_count": per_run_committee_takeover_count,
+        "missing_files": missing_files,
+        "empty_rows": empty_rows,
+        "missing_columns": missing_columns,
+        "invalid_values": invalid_values,
+    }
+
 
 def get_task_handlers() -> dict[str, MetricHandler]:
     """任务注册表：为后续功能扩展预留接口。"""
     return {
         "poisontest_accuracy_avg": read_poisontest_accuracy_avg,
         "global_macro_f1_max": read_global_macro_f1_max,
+        "fedcsap_last_r_and_committee_takeover": read_fedcsap_last_r_and_committee_takeover,
     }
 
 
@@ -299,14 +439,14 @@ def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict)
     elif summary["task"] == "global_macro_f1_max":
         rows.insert(3, ("max_global_macro_f1_avg", f"{summary['max_global_macro_f1_avg']:.10f}"))
         rows.append(("no_valid_f1_runs", len(summary["no_valid_f1_runs"])))
-        
+
         # 新增：额外写入纯数值文件的逻辑
         extra_out_file = output_dir / f"{base_filename}_raw_values.txt"
         with extra_out_file.open("w", encoding="utf-8") as ef:
             for run_id in sorted(summary["per_run_max_global_macro_f1"]):
                 run_label = f"{run_id:0{run_label_width}d}"
                 f1_value = summary['per_run_max_global_macro_f1'][run_id]
-                
+
                 # 写入汇总表
                 rows.append(
                     (
@@ -316,6 +456,31 @@ def write_summary(output_dir: Path, start_run: str, end_run: str, summary: dict)
                 )
                 # 写入纯数值表（附带换行符）
                 ef.write(f"{f1_value:.10f}\n")
+    elif summary["task"] == "fedcsap_last_r_and_committee_takeover":
+        rows.insert(3, ("client_count", 25))
+
+        extra_out_file = output_dir / f"{base_filename}_details.csv"
+        with extra_out_file.open("w", encoding="utf-8", newline="") as ef:
+            writer = csv.writer(ef)
+            writer.writerow([
+                "run_id",
+                *[f"client_{cid}_last_R" for cid in range(25)],
+                "committee_takeover_count",
+            ])
+            for run_id in sorted(summary["per_run_last_r"]):
+                run_label = f"{run_id:0{run_label_width}d}"
+                takeover_count = summary["per_run_committee_takeover_count"].get(run_id, 0)
+                rows.append((f"run_{run_label}_committee_takeover_count", takeover_count))
+
+                per_client = summary["per_run_last_r"][run_id]
+                writer.writerow([
+                    run_label,
+                    *[
+                        "" if math.isnan(per_client[cid]) else f"{per_client[cid]:.10f}"
+                        for cid in range(25)
+                    ],
+                    takeover_count,
+                ])
 
     with out_file.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -352,6 +517,8 @@ def main() -> None:
         print(f"平均 accuracy: {summary['accuracy_avg']:.10f}")
     elif summary["task"] == "global_macro_f1_max":
         print(f"平均最大 global_macro_f1: {summary['max_global_macro_f1_avg']:.10f}")
+    elif summary["task"] == "fedcsap_last_r_and_committee_takeover":
+        print("已提取每个 run 的 25 个 client 的最后一次 R 及 committee_takeover 次数。")
     print(f"输出汇总文件: {out_file}")
     
     # 终端回显纯数值文件的生成情况
