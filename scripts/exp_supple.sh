@@ -108,15 +108,15 @@ start_run() {
   fi
 
   if [[ "${attack_method}" == "dba" ]]; then
-    local poisoning_per_batch=10
+    local poisoning_per_batch=60
     if [[ "${aggregation_method}" == "fedcsap" ]]; then
-      poisoning_per_batch=5
+      poisoning_per_batch=60
     elif [[ "${aggregation_method}" == "median" || "${aggregation_method}" == "krum" ]]; then
-      poisoning_per_batch=15
+      poisoning_per_batch=60
     fi
     cmd+=(--poisoning_per_batch="${poisoning_per_batch}")
   fi
-  
+
   if [[ "${DRY_RUN}" == "1" ]]; then
     printf 'DRY_RUN: %q ' "${cmd[@]}"
     echo

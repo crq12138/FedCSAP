@@ -1,10 +1,4 @@
 run_tag,type,attack_method,mal_pcnt,aggregation_method,dirichlet_alpha
-run_034,cifar,inner_product_manipulation,0.2,fedcsap,0.9
-run_039,cifar,inner_product_manipulation,0.3,fltrust,0.9
-run_040,cifar,inner_product_manipulation,0.2,fltrust,0.9
-run_041,cifar,inner_product_manipulation,0.1,fltrust,0.9
-run_042,cifar,inner_product_manipulation,0.3,krum,0.9
-run_185,mnist,inner_product_manipulation,0.1,fltrust
 run_225,cifar,dba,0.3,fedcsap
 run_226,cifar,dba,0.2,fedcsap
 run_227,cifar,dba,0.1,fedcsap

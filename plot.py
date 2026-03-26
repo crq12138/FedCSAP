@@ -1,11 +1,17 @@
+from __future__ import annotations
 #!/usr/bin/env python3
 """绘图程序入口。
 
 当前支持图：
 1) FedCSAP 指定 run 的信誉 R 与委员会当选次数点位图。
 """
+"""
+python plot.py fedcsap_r_vs_committee \
+  --details-csv result/fedcsap_last_r_and_committee_takeover_run_XXX_to_XXX_details.csv \
+  --run-id 123 \
+  --output result/fedcsap_run_123_r_vs_committee.png
+"""
 
-from __future__ import annotations
 
 import argparse
 import csv
