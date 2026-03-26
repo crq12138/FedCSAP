@@ -20,6 +20,22 @@ from typing import Iterable
 
 
 CLIENT_COUNT = 25
+PLOT_OUTPUT_DIR = Path("plot_result")
+
+# ========== 统一图形元素尺寸配置区域（便于调试）==========
+PLOT_STYLE = {
+    "figure_size": (7.2, 4.2),  # IEEE 双栏常见宽高比例
+    "normal_marker_size": 42,
+    "malicious_marker_size": 56,
+    "label_font_size": 10,
+    "tick_font_size": 9,
+    "legend_font_size": 9,
+    "annotation_font_size": 7,
+    "annotation_offset": (3, 2),  # (x, y) 偏移，单位 points
+    "grid_linewidth": 0.7,
+    "spine_linewidth": 0.8,
+    "dpi": 300,
+}
 
 
 class PlotDataError(Exception):
@@ -50,9 +66,12 @@ def parse_args() -> argparse.Namespace:
     )
     scatter_parser.add_argument(
         "--output",
-        default="result/fedcsap_r_vs_committee.png",
+        default="plot_result/fedcsap_r_vs_committee",
         type=Path,
-        help="图片输出路径（默认：result/fedcsap_r_vs_committee.png）",
+        help=(
+            "输出文件名前缀（可带/不带后缀）。"
+            "程序会固定保存到 plot_result 目录下，并同时导出 .png 与 .eps。"
+        ),
     )
     scatter_parser.add_argument(
         "--title",
@@ -161,31 +180,100 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
         raise PlotDataError(f"details CSV 不存在: {details_csv}")
 
     run_row = find_target_run_row(details_csv, run_id)
-    x_r_values, y_elected_counts, is_malicious_flags, _ = build_scatter_points(run_row)
+    x_r_values, y_elected_counts, is_malicious_flags, client_labels = build_scatter_points(run_row)
 
     normal_x = [x for x, m in zip(x_r_values, is_malicious_flags) if not m]
     normal_y = [y for y, m in zip(y_elected_counts, is_malicious_flags) if not m]
     malicious_x = [x for x, m in zip(x_r_values, is_malicious_flags) if m]
     malicious_y = [y for y, m in zip(y_elected_counts, is_malicious_flags) if m]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+            "axes.linewidth": PLOT_STYLE["spine_linewidth"],
+            "axes.grid": True,
+            "grid.linestyle": "--",
+            "grid.alpha": 0.35,
+            "grid.linewidth": PLOT_STYLE["grid_linewidth"],
+            "savefig.bbox": "tight",
+        }
+    )
+
+    fig, ax = plt.subplots(figsize=PLOT_STYLE["figure_size"])
     if normal_x:
-        ax.scatter(normal_x, normal_y, s=70, alpha=0.85, label="Normal", marker="o")
+        ax.scatter(
+            normal_x,
+            normal_y,
+            s=PLOT_STYLE["normal_marker_size"],
+            alpha=0.88,
+            label="Normal",
+            marker="o",
+            color="#1f77b4",
+            edgecolors="white",
+            linewidths=0.5,
+        )
     if malicious_x:
-        ax.scatter(malicious_x, malicious_y, s=90, alpha=0.9, label="Malicious", marker="x", color="crimson")
+        ax.scatter(
+            malicious_x,
+            malicious_y,
+            s=PLOT_STYLE["malicious_marker_size"],
+            alpha=0.95,
+            label="Malicious",
+            marker="X",
+            color="#d62728",
+            edgecolors="white",
+            linewidths=0.5,
+        )
 
-    auto_title = f"FedCSAP Run {run_id}: R vs Committee Elected Count"
-    ax.set_title(title or auto_title)
-    ax.set_xlabel("Reputation R")
-    ax.set_ylabel("Committee Elected Count")
-    ax.grid(True, linestyle="--", alpha=0.35)
-    ax.legend()
+    # 需求：图中不显示标题（title 参数仅为兼容保留）
+    _ = title
+    ax.set_xlabel("Reputation $R$", fontsize=PLOT_STYLE["label_font_size"])
+    ax.set_ylabel("Committee Elected Count", fontsize=PLOT_STYLE["label_font_size"])
+    ax.tick_params(axis="both", labelsize=PLOT_STYLE["tick_font_size"])
 
-    output.parent.mkdir(parents=True, exist_ok=True)
+    # 标注每个点对应 client_id
+    for x, y, cid, is_malicious in zip(x_r_values, y_elected_counts, client_labels, is_malicious_flags):
+        ax.annotate(
+            cid,
+            (x, y),
+            textcoords="offset points",
+            xytext=PLOT_STYLE["annotation_offset"],
+            fontsize=PLOT_STYLE["annotation_font_size"],
+            color="#d62728" if is_malicious else "#1f77b4",
+            alpha=0.95,
+        )
+
+    # 横坐标范围必须包含 1.0
+    x_min_data = min(x_r_values)
+    x_max_data = max(x_r_values)
+    margin = max((x_max_data - x_min_data) * 0.08, 0.02)
+    x_low = min(x_min_data - margin, 1.0)
+    x_high = max(x_max_data + margin, 1.0)
+    if x_low == x_high:
+        x_high = x_low + 1.0
+    ax.set_xlim(x_low, x_high)
+
+    # 保证刻度里出现 1.0
+    current_ticks = list(ax.get_xticks())
+    if not any(abs(t - 1.0) < 1e-9 for t in current_ticks):
+        current_ticks.append(1.0)
+        current_ticks = sorted(set(round(t, 6) for t in current_ticks))
+        ax.set_xticks(current_ticks)
+
+    ax.legend(frameon=True, fontsize=PLOT_STYLE["legend_font_size"])
+
+    output_stem = output.stem if output.suffix else output.name
+    png_path = PLOT_OUTPUT_DIR / f"{output_stem}.png"
+    eps_path = PLOT_OUTPUT_DIR / f"{output_stem}.eps"
+    PLOT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
-    fig.savefig(output, dpi=180)
+    fig.savefig(png_path, dpi=PLOT_STYLE["dpi"])
+    fig.savefig(eps_path, format="eps")
     plt.close(fig)
-    return output
+    print(f"绘图完成，输出文件: {png_path}")
+    print(f"绘图完成，输出文件: {eps_path}")
+    return png_path
 
 
 def main() -> None:
@@ -198,7 +286,7 @@ def main() -> None:
             output=args.output,
             title=args.title,
         )
-        print(f"绘图完成，输出文件: {out}")
+        print(f"主输出文件: {out}")
         return
 
     raise PlotDataError(f"不支持的 plot_type: {args.plot_type}")
