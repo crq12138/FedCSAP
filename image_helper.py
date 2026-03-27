@@ -734,9 +734,13 @@ class ImageHelper(Helper):
                 logger.info(f'train data size: {len(self.train_dataset)}')
 
             self.lsrs = []
+            nonuniform_bias = self.params.get('bias')
+            if nonuniform_bias is None:
+                nonuniform_bias = 0.5
+                logger.warning("Missing 'bias' in params; defaulting to 0.5 for nonuniform data assignment.")
 
             if self.params['noniid']:
-                sd, sl, ewd, ewl, sad, sal = self.assign_data_nonuniform(self.train_dataset, bias=self.params['bias'], p=0.1, flt_aggr=1, num_workers=self.params['number_of_total_participants'], num_labels=num_labels)
+                sd, sl, ewd, ewl, sad, sal = self.assign_data_nonuniform(self.train_dataset, bias=nonuniform_bias, p=0.1, flt_aggr=1, num_workers=self.params['number_of_total_participants'], num_labels=num_labels)
                 if self.params['aggregation_methods'] == config.AGGR_FLTRUST:
                     ewd.append(sd)
                     ewl.append(sl)
@@ -779,7 +783,7 @@ class ImageHelper(Helper):
                 if self.params['aggregation_methods'] == config.AGGR_FLTRUST and len(train_loaders) > 0:
                     sd, sl, _, _, _, _ = self.assign_data_nonuniform(
                         self.train_dataset,
-                        bias=self.params['bias'],
+                        bias=nonuniform_bias,
                         p=0.1,
                         flt_aggr=1,
                         num_workers=self.params['number_of_total_participants'],
