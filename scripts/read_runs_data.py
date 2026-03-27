@@ -12,7 +12,11 @@ from typing import Callable
 
 
 MetricHandler = Callable[[Path, range, int], dict]
-
+DATASET_ROUND_LIMITS = {
+    "mnist": 100,
+    "pathmnist": 150,
+    "cifar": 200,
+}
 
 class DataReadError(Exception):
     """数据读取相关错误。"""
@@ -78,6 +82,31 @@ def resolve_run_csv_path(runs_dir: Path, run_id: int, run_id_width: int, filenam
 
     plain = runs_dir / f"run_{run_id}" / filename
     return plain
+
+
+def resolve_run_dir(runs_dir: Path, run_id: int, run_id_width: int) -> Path:
+    padded = runs_dir / f"run_{run_id:0{run_id_width}d}"
+    if padded.exists():
+        return padded
+    return runs_dir / f"run_{run_id}"
+
+
+def read_run_type(round_params_path: Path) -> str | None:
+    if not round_params_path.exists():
+        return None
+
+    with round_params_path.open("r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("type:"):
+                raw_value = line.split(":", 1)[1].strip()
+                if not raw_value:
+                    return None
+                return raw_value.strip("\"'").lower()
+    return None
+
 
 
 def read_poisontest_accuracy_avg(runs_dir: Path, run_ids: range, run_id_width: int) -> dict:
@@ -269,6 +298,19 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
     invalid_values: list[str] = []
 
     for run_id in run_ids:
+        run_dir = resolve_run_dir(runs_dir, run_id, run_id_width)
+        params_path = run_dir / "params.yaml"
+        run_type = read_run_type(params_path)
+        if run_type is None:
+            missing_files.append(str(params_path))
+            continue
+        round_limit = DATASET_ROUND_LIMITS.get(run_type)
+        if round_limit is None:
+            invalid_values.append(
+                f"{params_path} (unsupported type={run_type}, expected one of {sorted(DATASET_ROUND_LIMITS)})"
+            )
+            continue
+
         client_csv = resolve_run_csv_path(
             runs_dir,
             run_id,
@@ -292,6 +334,26 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
         with client_csv.open("r", encoding="utf-8", newline="") as f:
             client_reader = csv.DictReader(f)
             client_rows = list(client_reader)
+
+        if "epoch" not in (client_reader.fieldnames or []):
+            missing_columns.append(str(client_csv))
+            continue
+        filtered_client_rows = []
+        for row_idx, row in enumerate(client_rows, start=1):
+            raw_epoch = row.get("epoch")
+            if raw_epoch is None or str(raw_epoch).strip() == "":
+                invalid_values.append(f"{client_csv} [row {row_idx}] (empty epoch)")
+                continue
+            try:
+                epoch = int(float(raw_epoch))
+            except ValueError:
+                invalid_values.append(
+                    f"{client_csv} [row {row_idx}] (invalid epoch={raw_epoch})"
+                )
+                continue
+            if epoch <= round_limit:
+                filtered_client_rows.append(row)
+        client_rows = filtered_client_rows
 
         if not client_rows:
             empty_rows.append(str(client_csv))
@@ -388,6 +450,26 @@ def read_fedcsap_last_r_and_committee_takeover(runs_dir: Path, run_ids: range, r
             round_reader = csv.DictReader(f)
             round_rows = list(round_reader)
 
+        if "epoch" not in (round_reader.fieldnames or []):
+            missing_columns.append(str(round_csv))
+            continue
+        filtered_round_rows = []
+        for row_idx, row in enumerate(round_rows, start=1):
+            raw_epoch = row.get("epoch")
+            if raw_epoch is None or str(raw_epoch).strip() == "":
+                invalid_values.append(f"{round_csv} [row {row_idx}] (empty epoch)")
+                continue
+            try:
+                epoch = int(float(raw_epoch))
+            except ValueError:
+                invalid_values.append(
+                    f"{round_csv} [row {row_idx}] (invalid epoch={raw_epoch})"
+                )
+                continue
+            if epoch <= round_limit:
+                filtered_round_rows.append(row)
+        round_rows = filtered_round_rows
+        
         if not round_rows:
             empty_rows.append(str(round_csv))
             continue

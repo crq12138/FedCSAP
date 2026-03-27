@@ -66,3 +66,15 @@ If you find our work useful in your research, please consider citing:
 - [ebagdasa/backdoor_federated_learning](https://github.com/ebagdasa/backdoor_federated_learning)
 - [krishnap25/RFA](https://github.com/krishnap25/RFA)
 - [DistributedML/FoolsGold](https://github.com/DistributedML/FoolsGold)
+
+## 从run中记录数据到result
+'''
+python scripts/read_runs_data.py   --runs-dir ./runs   --start-run 129   --end-run 131   --task fedcsap_last_r_and_committee_takeover   --output-dir result
+'''
+
+## 从result中制表
+- 制作点位图
+'''
+ python plot.py fedcsap_r_vs_committee   --details-csv result/fedcsap_last_r_and_committee_takeover_run_129_to_131_details.csv   --run-id 130   --output result/fedcsap_run_130_r_vs_committee.png
+'''
+

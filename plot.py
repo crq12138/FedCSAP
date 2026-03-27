@@ -27,10 +27,10 @@ PLOT_STYLE = {
     "figure_size": (7.2, 4.2),  # IEEE 双栏常见宽高比例
     "normal_marker_size": 42,
     "malicious_marker_size": 56,
-    "label_font_size": 10,
-    "tick_font_size": 9,
-    "legend_font_size": 9,
-    "annotation_font_size": 7,
+    "label_font_size": 16,
+    "tick_font_size": 14,
+    "legend_font_size": 14,
+    "annotation_font_size": 14,
     "annotation_offset": (3, 2),  # (x, y) 偏移，单位 points
     "grid_linewidth": 0.7,
     "spine_linewidth": 0.8,
@@ -162,7 +162,7 @@ def build_scatter_points(run_row: dict[str, str]) -> tuple[list[float], list[flo
         x_r_values.append(r_value)
         y_elected_counts.append(elected_count)
         is_malicious_flags.append(malicious)
-        client_labels.append(f"client_{cid}")
+        client_labels.append(f"{cid}")
 
     if not x_r_values:
         raise PlotDataError("目标 run 中没有可用于绘图的有效点位数据。")
@@ -173,8 +173,9 @@ def build_scatter_points(run_row: dict[str, str]) -> tuple[list[float], list[flo
 def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, title: str | None = None) -> Path:
     try:
         import matplotlib.pyplot as plt
+        from adjustText import adjust_text  # <--- 新增：引入排斥力算法库
     except ModuleNotFoundError as exc:
-        raise PlotDataError("未安装 matplotlib，请先安装后再绘图（例如: pip install matplotlib）。") from exc
+        raise PlotDataError("未安装必要的绘图库，请先执行: pip install matplotlib adjustText") from exc # <--- 修改：提示中加入 adjustText
 
     if not details_csv.exists():
         raise PlotDataError(f"details CSV 不存在: {details_csv}")
@@ -233,16 +234,38 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
     ax.tick_params(axis="both", labelsize=PLOT_STYLE["tick_font_size"])
 
     # 标注每个点对应 client_id
+    # for x, y, cid, is_malicious in zip(x_r_values, y_elected_counts, client_labels, is_malicious_flags):
+    #     ax.annotate(
+    #         cid,
+    #         (x, y),
+    #         textcoords="offset points",
+    #         xytext=PLOT_STYLE["annotation_offset"],
+    #         fontsize=PLOT_STYLE["annotation_font_size"],
+    #         color="#d62728" if is_malicious else "#1f77b4",
+    #         alpha=0.95,
+    #     )
+    texts = []
     for x, y, cid, is_malicious in zip(x_r_values, y_elected_counts, client_labels, is_malicious_flags):
-        ax.annotate(
+        txt = ax.text(
+            x, 
+            y, 
             cid,
-            (x, y),
-            textcoords="offset points",
-            xytext=PLOT_STYLE["annotation_offset"],
             fontsize=PLOT_STYLE["annotation_font_size"],
             color="#d62728" if is_malicious else "#1f77b4",
             alpha=0.95,
         )
+        texts.append(txt)
+
+    # 运用斥力算法自动计算非重叠位置
+    adjust_text(
+        texts,
+        x=x_r_values,
+        y=y_elected_counts,
+        ax=ax,
+        expand_points=(1.5, 1.5),  # 调整文本与数据点之间的排斥力阈值
+        expand_text=(1.2, 1.2),    # 调整文本与文本之间的排斥力阈值
+        arrowprops=dict(arrowstyle="-", color="gray", lw=0.6, alpha=0.7) # 偏移后自动生成指向原数据点的细灰线
+    )
 
     # 横坐标范围必须包含 1.0
     x_min_data = min(x_r_values)
