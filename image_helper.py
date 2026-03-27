@@ -734,9 +734,13 @@ class ImageHelper(Helper):
                 logger.info(f'train data size: {len(self.train_dataset)}')
 
             self.lsrs = []
+            nonuniform_bias = self.params.get('bias')
+            if nonuniform_bias is None:
+                nonuniform_bias = 0.5
+                logger.warning("Missing 'bias' in params; defaulting to 0.5 for nonuniform data assignment.")
 
             if self.params['noniid']:
-                sd, sl, ewd, ewl, sad, sal = self.assign_data_nonuniform(self.train_dataset, bias=self.params['bias'], p=0.1, flt_aggr=1, num_workers=self.params['number_of_total_participants'], num_labels=num_labels)
+                sd, sl, ewd, ewl, sad, sal = self.assign_data_nonuniform(self.train_dataset, bias=nonuniform_bias, p=0.1, flt_aggr=1, num_workers=self.params['number_of_total_participants'], num_labels=num_labels)
                 if self.params['aggregation_methods'] == config.AGGR_FLTRUST:
                     ewd.append(sd)
                     ewl.append(sl)
@@ -775,6 +779,24 @@ class ImageHelper(Helper):
                         if len(dataset_per_worker) != 0:
                             train_loader = torch.utils.data.DataLoader(dataset_per_worker, batch_size=self.params['batch_size'], shuffle=True)
                             train_loaders.append((id_worker, train_loader))
+
+                if self.params['aggregation_methods'] == config.AGGR_FLTRUST and len(train_loaders) > 0:
+                    sd, sl, _, _, _, _ = self.assign_data_nonuniform(
+                        self.train_dataset,
+                        bias=nonuniform_bias,
+                        p=0.1,
+                        flt_aggr=1,
+                        num_workers=self.params['number_of_total_participants'],
+                        num_labels=num_labels,
+                    )
+                    trusted_dataset = [(sd[idx], sl[idx]) for idx in range(len(sd))]
+                    trusted_loader = torch.utils.data.DataLoader(
+                        trusted_dataset,
+                        batch_size=self.params['batch_size'],
+                        shuffle=True,
+                    )
+                    trusted_participant_id = train_loaders[-1][0]
+                    train_loaders[-1] = (trusted_participant_id, trusted_loader)
             elif self.params['varying_local_data_size']:
                 all_range = list(range(len(self.train_dataset)))
                 varying_data_rng = random.Random(seed_from(self.params['seed'], 'varying_local_data_size_shuffle'))
