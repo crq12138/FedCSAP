@@ -1106,11 +1106,20 @@ class Helper:
             trust_scores[i] = max(trust_scores[i], 0)
 
         clipping_coeffs = np.ones(len(trust_scores))
+        clean_server_grad_norm = np.linalg.norm(clean_server_grad)
         for i in range(len(trust_scores)):
-            clipping_coeffs[i] = np.linalg.norm(clean_server_grad) / np.linalg.norm(grads[i])
+            client_grad_norm = np.linalg.norm(grads[i])
+            if client_grad_norm <= 0 or not np.isfinite(client_grad_norm) or not np.isfinite(clean_server_grad_norm):
+                clipping_coeffs[i] = 0.0
+            else:
+                clipping_coeffs[i] = clean_server_grad_norm / client_grad_norm
 
         wv = trust_scores
+        raw_wv = np.array([wv[c] * clipping_coeffs[c] for c in range(len(wv))], dtype=np.float64)
+        raw_wv = np.nan_to_num(raw_wv, nan=0.0, posinf=0.0, neginf=0.0)
+        sum_raw_wv = np.sum(raw_wv)
         sum_trust_scores = np.sum(trust_scores)
+        safe_sum_trust_scores = sum_trust_scores if sum_trust_scores > 0 else 1e-12
         # logger.info(f'clipping_coeffs: {clipping_coeffs}')
         # logger.info(f'wv: {wv}')
         # logger.info(f'wv: {wv/sum_trust_scores}')
@@ -1126,12 +1135,18 @@ class Helper:
                 temp += wv[c] * clipping_coeffs[c] * client_grad[i].cpu()
                 # print(temp)
                 # temp += wv[c]
-            temp = temp / sum_trust_scores
+            temp = temp / safe_sum_trust_scores
             agg_grads.append(temp)
 
         # logger.info(f'agg_grads: {self.flatten_gradient(agg_grads)}')
 
-        wv = [wv[c] * clipping_coeffs[c]/sum_trust_scores for c in range(len(wv))]
+        if sum_raw_wv <= 0:
+            logger.warning(
+                'FLTrust aggregation got zero effective trust score; falling back to uniform client weights.'
+            )
+            wv = np.ones(len(wv), dtype=np.float64) / max(len(wv), 1)
+        else:
+            wv = raw_wv / sum_raw_wv
         wv = np.array(wv)
         logger.info(f'adv mean wv: {np.mean(wv[adv_indices])}')
         logger.info(f'benign mean wv: {np.mean(wv[benign_indices[:-1]])}')
@@ -1235,11 +1250,18 @@ class Helper:
             trust_scores[i] = max(trust_scores[i], 0)
 
         clipping_coeffs = np.ones(len(trust_scores))
+        clean_server_grad_norm = np.linalg.norm(clean_server_grad)
         for i in range(len(trust_scores)):
-            clipping_coeffs[i] = np.linalg.norm(clean_server_grad) / np.linalg.norm(grads[i])
+            client_grad_norm = np.linalg.norm(grads[i])
+            if client_grad_norm <= 0 or not np.isfinite(client_grad_norm) or not np.isfinite(clean_server_grad_norm):
+                clipping_coeffs[i] = 0.0
+            else:
+                clipping_coeffs[i] = clean_server_grad_norm / client_grad_norm
 
         wv = trust_scores
-        sum_trust_scores = np.sum(trust_scores)
+        raw_wv = np.array([wv[c] * clipping_coeffs[c] for c in range(len(wv))], dtype=np.float64)
+        raw_wv = np.nan_to_num(raw_wv, nan=0.0, posinf=0.0, neginf=0.0)
+        sum_raw_wv = np.sum(raw_wv)
         # wv = np.ones(self.params['no_models'])
         # wv = wv/len(wv)
         # logger.info(f'clipping_coeffs: {clipping_coeffs}')
@@ -1261,7 +1283,13 @@ class Helper:
         #     agg_grads.append(temp)
 
         # logger.info(f'agg_grads: {self.flatten_gradient(agg_grads)}')
-        wv = [wv[c] * clipping_coeffs[c]/sum_trust_scores for c in range(len(wv))]
+        if sum_raw_wv <= 0:
+            logger.warning(
+                'FLTrust aggregation got zero effective trust score; falling back to uniform client weights.'
+            )
+            wv = np.ones(len(wv), dtype=np.float64) / max(len(wv), 1)
+        else:
+            wv = raw_wv / sum_raw_wv
         wv = np.array(wv)
         # try:
         #     logger.info(f'adv mean wv: {np.mean(wv[adv_indices])}')
