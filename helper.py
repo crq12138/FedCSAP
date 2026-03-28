@@ -1667,10 +1667,14 @@ class Helper:
 
         # optimizer.zero_grad()
         # print(client_grads[0])
-        # Use the same signal for scoring and execution:
-        # - scoring uses client delta models (possibly attack-manipulated)
-        # - execution also aggregates client delta models with wv
-        wv, alpha = self.fg.score_delta_models(delta_models, names)
+        # Optional IPM-only fix for score/execution mismatch:
+        # - legacy behavior: score on gradients (keeps SF/TLF behavior unchanged)
+        # - IPM fix: score on delta_models, because IPM mutates updates[*][2]
+        ipm_fix_enabled = self.params.get('fg_fix_ipm_score_execution_mismatch', True)
+        if self.params['attack_methods'] == config.ATTACK_IPM and ipm_fix_enabled:
+            wv, alpha = self.fg.score_delta_models(delta_models, names)
+        else:
+            _, wv, alpha = self.fg.aggregate_gradients(client_grads, names)
 
         aggregate_weights = self.weighted_average_oracle(delta_models, torch.tensor(wv))
 

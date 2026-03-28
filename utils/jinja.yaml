@@ -71,6 +71,8 @@ geom_median_maxiter: 10
 
 {% if get_aggregation_methods(aggregation_methods) == 'foolsgold' %}
 fg_use_memory: true
+# Keep legacy FG behavior for non-IPM attacks; only align score/execution for IPM.
+fg_fix_ipm_score_execution_mismatch: true
 {% endif %}
 
 {% if get_aggregation_methods(aggregation_methods) == 'afa' %}
