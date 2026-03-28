@@ -1068,9 +1068,9 @@ class ImageHelper(Helper):
 
         images, targets = bptt
 
-        poison_count= 0
-        new_images=images
-        new_targets=targets
+        poison_count = 0
+        new_images = images.to(device, non_blocking=True).clone()
+        new_targets = targets.to(device, non_blocking=True).long().clone()
 
         adv_lsr = self.lsrs[self.adversarial_namelist[adversarial_index]]
         adv_lsr = np.array(adv_lsr)
@@ -1085,37 +1085,51 @@ class ImageHelper(Helper):
             major_ind_list.append((major_ind_list[-1]+1)%(len(adv_lsr)-1))
             # logger.info(f'poisoning_per_batch: {np.sum(adv_lsr[major_ind_list])}')
 
-        for index in range(0, len(images)):
-            if evaluation: # poison all data when testing
-                new_targets[index] = self.params['poison_label_swap']
-                new_images[index] = self.add_pixel_pattern(images[index],adversarial_index)
-                poison_count+=1
+        batch_size = len(new_images)
 
-            else: # poison part of data when training
-                if not special_attack:
-                    if index < poisoning_per_batch:
-                        new_targets[index] = self.params['poison_label_swap']
-                        new_images[index] = self.add_pixel_pattern(images[index],adversarial_index)
-                        poison_count += 1
-                    else:
-                        new_images[index] = images[index]
-                        new_targets[index]= targets[index]
-                else:
-                    if targets[index] in major_ind_list and poison_count<poisoning_per_batch:
-                        # logger.info(f'poisoning index {index} with target {targets[index]}')
-                        new_targets[index] = self.params['poison_label_swap']
-                        new_images[index] = self.add_pixel_pattern(images[index],-1)
-                        poison_count+=1
-                    else:
-                        new_images[index] = images[index]
-                        new_targets[index]= targets[index]
+        if evaluation:  # poison all data when testing
+            poison_indices = torch.arange(batch_size, device=device)
+        elif not special_attack:
+            poison_indices = torch.arange(min(poisoning_per_batch, batch_size), device=device)
+        else:
+            major_ind_tensor = torch.tensor(major_ind_list, device=device, dtype=new_targets.dtype)
+            candidate_mask = (new_targets.unsqueeze(1) == major_ind_tensor.unsqueeze(0)).any(dim=1)
+            candidate_indices = torch.nonzero(candidate_mask, as_tuple=False).squeeze(1)
+            poison_indices = candidate_indices[:poisoning_per_batch]
 
-        new_images = new_images.to(device)
-        new_targets = new_targets.to(device).long()
+        poison_count = int(poison_indices.numel())
+        if poison_count > 0:
+            new_targets[poison_indices] = self.params['poison_label_swap']
+            pattern_adv_idx = adversarial_index if (evaluation or not special_attack) else -1
+            self._apply_pixel_pattern_inplace(new_images, poison_indices, pattern_adv_idx)
+
         if evaluation:
             new_images.requires_grad_(False)
             new_targets.requires_grad_(False)
         return new_images,new_targets,poison_count
+
+    def _apply_pixel_pattern_inplace(self, images, poison_indices, adversarial_index):
+        if adversarial_index == -1:
+            poison_patterns = []
+            for i in range(0, self.params['trigger_num']):
+                poison_patterns = poison_patterns + self.params[str(i) + '_poison_pattern']
+        else:
+            poison_patterns = self.params[str(adversarial_index % 4) + '_poison_pattern']
+
+        if not poison_patterns:
+            return
+
+        rows = torch.tensor([pos[0] for pos in poison_patterns], device=images.device, dtype=torch.long)
+        cols = torch.tensor([pos[1] for pos in poison_patterns], device=images.device, dtype=torch.long)
+        channels = images.size(1)
+        batch_index = poison_indices.unsqueeze(1)
+        row_index = rows.unsqueeze(0)
+        col_index = cols.unsqueeze(0)
+        if channels == 1:
+            images[batch_index, 0, row_index, col_index] = 1.0
+        else:
+            for channel in range(channels):
+                images[batch_index, channel, row_index, col_index] = 1.0
 
     def add_pixel_pattern_gpu(self,ori_image,adversarial_index):
         image = ori_image.clone().detach().requires_grad_(True).to(device)
