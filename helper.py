@@ -1640,12 +1640,10 @@ class Helper:
         return True, names, wv
 
     def foolsgold_update(self,target_model,updates):
-        client_grads = []
         alphas = []
         names = []
         delta_models = []
         for name, data in updates.items():
-            client_grads.append(data[1])  # gradient
             alphas.append(data[0])  # num_samples
             delta_models.append(data[2])
             names.append(name)
