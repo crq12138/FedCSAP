@@ -27,6 +27,13 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
         if not helper.params['minimize_logging']:
             main.logger.info(info)
 
+    def resolve_attack_method_for_agent(agent_name):
+        global_attack = helper.params['attack_methods']
+        if global_attack != config.ATTACK_MIXED_8:
+            return global_attack
+        attack_map = getattr(helper, 'adversary_attack_map', {})
+        return attack_map.get(int(agent_name), "none")
+
     epochs_submit_update_dict = dict()
     num_samples_dict = dict()
     current_number_of_adversaries=0
@@ -56,6 +63,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
             last_local_model[name] = target_model.state_dict()[name].clone()
 
         agent_name_key = agent_name_keys[model_id]
+        agent_attack_method = resolve_attack_method_for_agent(agent_name_key)
         ## Synchronize LR and models
         model = local_model
         model.copy_params(target_model.state_dict())
@@ -102,7 +110,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                     temp_local_epoch += 1
                     main_logger_info(f'fetching poison data for agent: {agent_name_key} epoch: {temp_local_epoch}')
                     _, data_iterator = helper.train_data[agent_name_key]
-                    if helper.params['attack_methods'] == config.ATTACK_AOTT:
+                    if agent_attack_method == config.ATTACK_AOTT:
                         own_dataset = data_iterator.dataset
                         edge_dataset = helper.poison_trainloader.dataset
                         # samp_indices = np.random.choice(len(edge_dataset), int(0.2*len(own_dataset)), replace=False)
@@ -110,7 +118,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                         data_iterator = torch.utils.data.DataLoader(
                             torch.utils.data.ConcatDataset([own_dataset, edge_dataset]),
                             batch_size=helper.params['batch_size'], shuffle=True)
-                    elif helper.params['attack_methods'] == config.ATTACK_SEMANTIC:
+                    elif agent_attack_method == config.ATTACK_SEMANTIC:
                         own_dataset = data_iterator.dataset
                         green_car_as_bird_dataset = helper.semantic_dataloader.dataset
                         data_iterator = torch.utils.data.DataLoader(
@@ -122,12 +130,12 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                     dataset_size = 0
                     dis2global_list=[]
                     for batch_id, batch in tqdm(enumerate(data_iterator), disable=True):
-                        if helper.params['attack_methods'] == config.ATTACK_DBA:
+                        if agent_attack_method == config.ATTACK_DBA:
                             #will set adversarial_index to -1 for centralized attack
                             data, targets, poison_num = helper.get_poison_batch(batch, adversarial_index=adversarial_index,evaluation=False)
-                        elif helper.params['attack_methods'] == config.ATTACK_TLF:
+                        elif agent_attack_method == config.ATTACK_TLF:
                             data, targets, poison_num = helper.get_poison_batch_for_targeted_label_flip(batch)
-                        elif helper.params['attack_methods'] in [config.ATTACK_AOTT, config.ATTACK_IPM, config.ATTACK_SEMANTIC, config.ATTACK_SF, "none"]:
+                        elif agent_attack_method in [config.ATTACK_AOTT, config.ATTACK_IPM, config.ATTACK_SEMANTIC, config.ATTACK_SF, "none"]:
                             data, targets = helper.get_batch(None, batch)
                             poison_num = 0
                         poison_optimizer.zero_grad()
@@ -211,14 +219,14 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                             [agent_name_key, epoch, epoch_loss, epoch_acc, epoch_corret, epoch_total])
 
                     if not helper.params['speed_boost'] or ('new_adaptive_attack' in helper.params.keys() and helper.params['new_adaptive_attack']):
-                        if helper.params['attack_methods'] == config.ATTACK_DBA:
+                        if agent_attack_method == config.ATTACK_DBA:
                             epoch_loss, epoch_acc, epoch_corret, epoch_total = test.Mytest_poison(helper=helper,
                                                                                                 epoch=epoch,
                                                                                                 model=model,
                                                                                                 is_poison=True,
                                                                                                 visualize=False,
                                                                                                 agent_name_key=agent_name_key)
-                        elif helper.params['attack_methods'] in [config.ATTACK_TLF]:
+                        elif agent_attack_method in [config.ATTACK_TLF]:
                             epoch_loss, epoch_acc, epoch_corret, epoch_total = test.Mytest_poison_label_flip(helper=helper,
                                                                                                 epoch=epoch,
                                                                                                 model=model,
@@ -352,14 +360,14 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
 
             if is_poison and not helper.params['speed_boost']:
                 if agent_name_key in helper.adversarial_namelist and (epoch in localmodel_poison_epochs):
-                    if helper.params['attack_methods'] == config.ATTACK_DBA:
+                    if agent_attack_method == config.ATTACK_DBA:
                         epoch_loss, epoch_acc, epoch_corret, epoch_total = test.Mytest_poison(helper=helper,
                                                                                             epoch=epoch,
                                                                                             model=model,
                                                                                             is_poison=True,
                                                                                             visualize=False,
                                                                                             agent_name_key=agent_name_key)
-                    elif helper.params['attack_methods'] == config.ATTACK_TLF:
+                    elif agent_attack_method == config.ATTACK_TLF:
                         epoch_loss, epoch_acc, epoch_corret, epoch_total = test.Mytest_poison_label_flip(helper=helper,
                                                                                             epoch=epoch,
                                                                                             model=model,
@@ -389,7 +397,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                                                      name=str(agent_name_key) + "_trigger")
 
             if (
-                helper.params['attack_methods'] == config.ATTACK_SF
+                agent_attack_method == config.ATTACK_SF
                 and is_poison
                 and agent_name_key in helper.adversarial_namelist
                 and (epoch in localmodel_poison_epochs)

@@ -27,6 +27,7 @@ ATTACK_IPM = 'inner_product_manipulation'
 ATTACK_SF = 'sf'
 ATTACK_AOTT = 'attack_of_the_tails'
 ATTACK_SEMANTIC = 'semantic_attack'
+ATTACK_MIXED_8 = 'mixed_8_tlf_sf_ipm_dba'
 
 
 def normalize_aggregation_method(method):

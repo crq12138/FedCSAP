@@ -100,7 +100,7 @@ class Helper:
         self.name = name
         self.best_loss = math.inf
 
-        if self.params['attack_methods'] in [config.ATTACK_TLF]:
+        if self.params['attack_methods'] in [config.ATTACK_TLF, config.ATTACK_MIXED_8]:
             if self.params['type'] in config.target_class_dict.keys():
                 self.source_class = config.target_class_dict[self.params['type']][self.params['tlf_label']][0]
                 self.target_class = config.target_class_dict[self.params['type']][self.params['tlf_label']][1]
@@ -659,7 +659,7 @@ class Helper:
     def print_util(self, a, b):
         return str(a) + ': ' + str(b)
 
-    def ipm_attack(self, updates):
+    def ipm_attack(self, updates, target_names=None):
         names = []
         delta_models = []
         if self.params['aggregation_methods'] in [config.AGGR_GEO_MED]:
@@ -675,16 +675,22 @@ class Helper:
         if ipm_val is None:
             ipm_val = 1.6
 
-        bad_idx = [idx for idx, name in enumerate(names) if name in self.adversarial_namelist]
+        if target_names is None:
+            bad_idx = [idx for idx, name in enumerate(names) if name in self.adversarial_namelist]
+        else:
+            target_set = set(target_names)
+            bad_idx = [idx for idx, name in enumerate(names) if name in target_set]
         benign_delta_models = [dm for idx, dm in enumerate(delta_models) if idx not in bad_idx]
+
+        if len(benign_delta_models) == 0:
+            return updates
 
         weights = np.ones(len(benign_delta_models), dtype=np.float32)
         weights = [-w * ipm_val/len(benign_delta_models) for w in weights]
         ipm_delta_models = self.weighted_sum_oracle(benign_delta_models, torch.tensor(weights))
 
         for idx in bad_idx:
-            if names[idx] in self.adversarial_namelist:
-                updates[names[idx]] = (updates[names[idx]][0], updates[names[idx]][1], ipm_delta_models)
+            updates[names[idx]] = (updates[names[idx]][0], updates[names[idx]][1], ipm_delta_models)
                 
         return updates
 

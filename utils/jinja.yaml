@@ -135,6 +135,7 @@ attack_methods_options:
   - 'dba'
   - 'inner_product_manipulation'
   - 'sf'
+  - 'mixed_8_tlf_sf_ipm_dba'
   - 'attack_of_the_tails'
   - 'semantic_attack'
 attack_methods: {{ get_attack_methods(attack_methods) }}

@@ -268,6 +268,11 @@ def run(params_loaded):
 
         if helper.params['attack_methods'] == config.ATTACK_IPM:
             updates = helper.ipm_attack(updates)
+        elif helper.params['attack_methods'] == config.ATTACK_MIXED_8:
+            mixed_attack_map = getattr(helper, 'adversary_attack_map', {})
+            ipm_adversaries = [name for name, method in mixed_attack_map.items() if method == config.ATTACK_IPM]
+            if ipm_adversaries:
+                updates = helper.ipm_attack(updates, target_names=ipm_adversaries)
 
         is_updated = True
         if helper.params['aggregation_methods'] == config.AGGR_FLSHIELD:
