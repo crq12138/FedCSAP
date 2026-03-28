@@ -268,6 +268,31 @@ def run(params_loaded):
 
         if helper.params['attack_methods'] == config.ATTACK_IPM:
             updates = helper.ipm_attack(updates)
+        elif helper.params['attack_methods'] == config.ATTACK_MIXED_8:
+            mixed_attack_map = getattr(helper, 'adversary_attack_map', {})
+            ipm_adversaries = [name for name, method in mixed_attack_map.items() if method == config.ATTACK_IPM]
+            ipm_supported_aggr = {
+                config.AGGR_FLAME,
+                config.AGGR_FLTRUST,
+                config.AGGR_FLSHIELD,
+                config.AGGR_FEDCSAP,
+                config.AGGR_AFA,
+                config.AGGR_MEAN,
+                config.AGGR_FEDAVG,
+                config.AGGR_MEDIAN,
+                config.AGGR_KRUM,
+                config.AGGR_FOOLSGOLD,
+            }
+            print(
+                "[mixed-attack] IPM rewrite check: "
+                f"aggregation={helper.params['aggregation_methods']}, "
+                f"ipm_adversaries={sorted(ipm_adversaries)}"
+            )
+            if ipm_adversaries and helper.params['aggregation_methods'] in ipm_supported_aggr:
+                updates = helper.ipm_attack(updates, target_names=ipm_adversaries)
+                print("[mixed-attack] IPM rewrite applied.")
+            elif ipm_adversaries:
+                print("[mixed-attack] IPM rewrite skipped (unsupported aggregation method).")
 
         is_updated = True
         if helper.params['aggregation_methods'] == config.AGGR_FLSHIELD:

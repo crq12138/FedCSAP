@@ -527,6 +527,17 @@ class ImageHelper(Helper):
         self.variable_poison_rates = [4, 8, 16, 24, 32] * 6
 
         self.poison_epochs_by_adversary = {}
+        self.adversary_attack_map = {}
+
+        attack_method = self.params['attack_methods']
+        is_mixed_8_attack = attack_method == config.ATTACK_MIXED_8
+        if is_mixed_8_attack:
+            tlf_count = int(self.params.get('number_of_adversary_targeted_label_flip', 0))
+            sf_count = int(self.params.get('number_of_adversary_sf', 0))
+            ipm_count = int(self.params.get('number_of_adversary_inner_product_manipulation', 0))
+            dba_count = int(self.params.get('number_of_adversary_dba', 0))
+            total_mixed_adv = tlf_count + sf_count + ipm_count + dba_count
+            self.params[f'number_of_adversary_{attack_method}'] = total_mixed_adv
         if self.params['is_random_adversary']:
             adversary_rng = random.Random(seed_from(self.params['seed'], 'adversarial_namelist'))
             if self.params['aggregation_methods'] == config.AGGR_FLTRUST:
@@ -544,10 +555,36 @@ class ImageHelper(Helper):
         for idx, id in enumerate(self.adversarial_namelist):
             self.poison_epochs_by_adversary[idx] = self.params[f'poison_epochs']
 
+        if is_mixed_8_attack:
+            assignment_plan = [
+                (config.ATTACK_TLF, int(self.params.get('number_of_adversary_targeted_label_flip', 0))),
+                (config.ATTACK_SF, int(self.params.get('number_of_adversary_sf', 0))),
+                (config.ATTACK_IPM, int(self.params.get('number_of_adversary_inner_product_manipulation', 0))),
+                (config.ATTACK_DBA, int(self.params.get('number_of_adversary_dba', 0))),
+            ]
+            offset = 0
+            for method, count in assignment_plan:
+                for adv_id in self.adversarial_namelist[offset:offset + count]:
+                    self.adversary_attack_map[int(adv_id)] = method
+                offset += count
+            method_to_adv = {
+                method: sorted([aid for aid, amethod in self.adversary_attack_map.items() if amethod == method])
+                for method, _ in assignment_plan
+            }
+            print(
+                "[mixed-attack] assignment summary: "
+                f"TLF={method_to_adv.get(config.ATTACK_TLF, [])}, "
+                f"SF={method_to_adv.get(config.ATTACK_SF, [])}, "
+                f"IPM={method_to_adv.get(config.ATTACK_IPM, [])}, "
+                f"DBA={method_to_adv.get(config.ATTACK_DBA, [])}"
+            )
+
         self.benign_namelist =list(set(self.participants_list) - set(self.adversarial_namelist))
 
         logger.info(f'adversarial_namelist: {self.adversarial_namelist}')
         logger.info(f'benign_namelist: {self.benign_namelist}')
+        if self.adversary_attack_map:
+            logger.info(f'adversary_attack_map: {self.adversary_attack_map}')
 
         csv_record.epoch_reports['adversarial_namelist'] = self.adversarial_namelist
         csv_record.epoch_reports['benign_namelist'] = self.benign_namelist
