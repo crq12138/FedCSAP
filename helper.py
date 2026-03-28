@@ -101,11 +101,12 @@ class Helper:
         self.best_loss = math.inf
 
         if self.params['attack_methods'] in [config.ATTACK_TLF, config.ATTACK_MIXED_8]:
+            tlf_label = self.params.get('tlf_label') or 'easy'
             if self.params['type'] in config.target_class_dict.keys():
-                self.source_class = config.target_class_dict[self.params['type']][self.params['tlf_label']][0]
-                self.target_class = config.target_class_dict[self.params['type']][self.params['tlf_label']][1]
+                self.source_class = config.target_class_dict[self.params['type']][tlf_label][0]
+                self.target_class = config.target_class_dict[self.params['type']][tlf_label][1]
             else:
-                self.source_class = int(self.params['tlf_label'])
+                self.source_class = int(tlf_label)
                 self.target_class = 9 - self.source_class
         elif self.params['attack_methods'] in [config.ATTACK_DBA]:
             self.source_class = int(self.params['poison_label_swap'])
