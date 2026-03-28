@@ -1640,12 +1640,10 @@ class Helper:
         return True, names, wv
 
     def foolsgold_update(self,target_model,updates):
-        client_grads = []
         alphas = []
         names = []
         delta_models = []
         for name, data in updates.items():
-            client_grads.append(data[1])  # gradient
             alphas.append(data[0])  # num_samples
             delta_models.append(data[2])
             names.append(name)
@@ -1669,7 +1667,10 @@ class Helper:
 
         # optimizer.zero_grad()
         # print(client_grads[0])
-        agg_grads, wv,alpha = self.fg.aggregate_gradients(client_grads,names)
+        # Use the same signal for scoring and execution:
+        # - scoring uses client delta models (possibly attack-manipulated)
+        # - execution also aggregates client delta models with wv
+        wv, alpha = self.fg.score_delta_models(delta_models, names)
 
         aggregate_weights = self.weighted_average_oracle(delta_models, torch.tensor(wv))
 
@@ -1979,28 +1980,53 @@ class FoolsGold(object):
         self.wv_history = []
         self.use_memory = use_memory
 
+    @staticmethod
+    def _flatten_delta_model(delta_model):
+        flat_tensors = []
+        for name in sorted(delta_model.keys()):
+            tensor = delta_model[name]
+            if not torch.is_tensor(tensor):
+                tensor = torch.as_tensor(tensor)
+            flat_tensors.append(tensor.detach().float().reshape(-1).cpu())
+        if len(flat_tensors) == 0:
+            return np.zeros((1,), dtype=np.float32)
+        return torch.cat(flat_tensors).numpy().astype(np.float32, copy=False)
+
+    def _compute_wv(self, grads, names):
+        grads = _sanitize_numpy_vectors(grads, 'foolsgold gradients', logger_obj=logger)
+        num_clients, grad_len = grads.shape
+        self.memory = np.zeros((num_clients, grad_len), dtype=np.float32)
+
+        for i in range(num_clients):
+            cname = names[i]
+            if cname in self.memory_dict and self.memory_dict[cname].shape == grads[i].shape:
+                self.memory_dict[cname] += grads[i]
+            else:
+                self.memory_dict[cname] = copy.deepcopy(grads[i])
+            self.memory[i] = self.memory_dict[cname]
+
+        if self.use_memory:
+            wv, alpha = self.foolsgold(self.memory)  # Use FG memory
+        else:
+            wv, alpha = self.foolsgold(grads)  # Use FG current round
+        return wv, alpha
+
+    def score_delta_models(self, delta_models, names):
+        grads = np.stack([self._flatten_delta_model(dm) for dm in delta_models], axis=0)
+        wv, alpha = self._compute_wv(grads, names)
+        logger.info(f'[foolsgold agg] wv (score source=delta_models): {wv}')
+        self.wv_history.append(wv)
+        return wv, alpha
+
     def aggregate_gradients(self, client_grads,names):
         cur_time = time.time()
         num_clients = len(client_grads)
         grad_len = np.array(client_grads[0][-2].cpu().data.numpy().shape).prod()
 
-        # if self.memory is None:
-        #     self.memory = np.zeros((num_clients, grad_len))
-        self.memory = np.zeros((num_clients, grad_len))
         grads = np.zeros((num_clients, grad_len))
         for i in range(len(client_grads)):
             grads[i] = np.reshape(client_grads[i][-2].cpu().data.numpy(), (grad_len))
-            if names[i] in self.memory_dict.keys():
-                self.memory_dict[names[i]]+=grads[i]
-            else:
-                self.memory_dict[names[i]]=copy.deepcopy(grads[i])
-            self.memory[i]=self.memory_dict[names[i]]
-        # self.memory += grads
-
-        if self.use_memory:
-            wv, alpha = self.foolsgold(self.memory)  # Use FG
-        else:
-            wv, alpha = self.foolsgold(grads)  # Use FG
+        wv, alpha = self._compute_wv(grads, names)
         logger.info(f'[foolsgold agg] wv: {wv}')
         self.wv_history.append(wv)
 
