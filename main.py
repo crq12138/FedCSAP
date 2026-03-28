@@ -226,15 +226,14 @@ def run(params_loaded):
         #         nonattacker.append(copy.deepcopy(adv))
         if helper.params['aggregation_methods'] == config.AGGR_FLTRUST:
             trusted_node = helper.benign_namelist[-1]
-            if trusted_node in committee_set:
-                trusted_node = None
-
-            benign_num = helper.params['no_models'] - len(adversarial_name_keys) - (1 if trusted_node is not None else 0)
+            benign_num = helper.params['no_models'] - len(adversarial_name_keys) - 1
             available_fltrust_benign = [b for b in helper.benign_namelist[:-1] if b not in committee_set]
             benign_num = max(0, min(benign_num, len(available_fltrust_benign)))
             random_agent_name_keys = round_rng.sample(available_fltrust_benign, benign_num)
             agent_name_keys = adversarial_name_keys + random_agent_name_keys
-            if trusted_node is not None:
+            # FLTrust root participant must always be present for a stable reference update.
+            # We append it as the last participant to keep root-order assumptions deterministic.
+            if trusted_node not in agent_name_keys:
                 agent_name_keys.append(trusted_node)
         else:
             benign_num = helper.params['no_models'] - len(adversarial_name_keys)

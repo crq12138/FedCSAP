@@ -44,8 +44,16 @@ def Mytest(helper, epoch,
             pred = output.data.max(1)[1]  # get the index of the max log-probability
             correct += pred.eq(targets.data.view_as(pred)).cpu().sum().item()
 
-    acc = 100.0 * (float(correct) / float(dataset_size))  if dataset_size!=0 else 0
-    total_l = total_loss / dataset_size if dataset_size!=0 else 0
+    if dataset_size != 0:
+        acc = 100.0 * (float(correct) / float(dataset_size))
+        total_l = total_loss / dataset_size
+    else:
+        acc = 0.0
+        total_l = float('nan')
+        main.logger.warning(
+            f'___Test {model.name} poisoned: {is_poison}, epoch: {epoch}: '
+            'dataset_size=0, average loss is undefined (set to NaN).'
+        )
 
     if print_flag:
         main.logger.info('___Test {} poisoned: {}, epoch: {}: Average loss: {:.4f}, '
@@ -193,8 +201,16 @@ def Mytest_poison_label_flip(helper, epoch,
             pred = output.data.max(1)[1]  # get the index of the max log-probability
             correct += pred.eq(targets.data.view_as(pred)).cpu().sum().item()
 
-    acc = 100.0 * (float(correct) / float(dataset_size))  if dataset_size!=0 else 0
-    total_l = total_loss / dataset_size if dataset_size!=0 else 0
+    if dataset_size != 0:
+        acc = 100.0 * (float(correct) / float(dataset_size))
+        total_l = total_loss / dataset_size
+    else:
+        acc = 0.0
+        total_l = float('nan')
+        main.logger.warning(
+            f'___Test {model.name} poisoned: {is_poison}, epoch: {epoch}: '
+            'dataset_size=0, average loss is undefined (set to NaN).'
+        )
 
     metric_name = "Recall" if get_recall else "ASR"
     main.logger.info('___Test {} poisoned: {}, epoch: {}: Average loss: {:.4f}, '

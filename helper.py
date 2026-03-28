@@ -1192,7 +1192,19 @@ class Helper:
         grads = _sanitize_numpy_vectors(grads, 'fltrust gradients', client_names=names, logger_obj=logger)
         logger.info(f'grad shape: {grads[0].shape}')
         # grads = client_grads
-        clean_server_grad = grads[-1]
+        trusted_client_id = None
+        if len(self.benign_namelist) > 0:
+            trusted_client_id = self.benign_namelist[-1]
+        if trusted_client_id in names:
+            trusted_idx = names.index(trusted_client_id)
+        else:
+            trusted_idx = len(names) - 1
+            logger.warning(
+                f'FLTrust trusted client {trusted_client_id} not found in current round; '
+                f'fallback to last client {names[trusted_idx]} as root.'
+            )
+
+        clean_server_grad = grads[trusted_idx]
         # cos_sims = [self.cos_calc_btn_grads(client_grad, clean_server_grad) for client_grad in grads]
         cos_sims = np.array(cosine_similarity(grads, [clean_server_grad])).flatten()
         all_cos_sims = cos_sims
@@ -1219,7 +1231,8 @@ class Helper:
         # all_cos_sims = cos_sims
         # logger.info(f'adv mean cos sim: {np.mean(cos_sims[adv_indices])}')
         # logger.info(f'benign mean cos sim: {np.mean(cos_sims[benign_indices])}')
-        cos_sims = cos_sims[:-1]
+        non_root_indices = [idx for idx in range(len(names)) if idx != trusted_idx]
+        cos_sims = cos_sims[non_root_indices]
         # logger.info(f'cos_sims: {cos_sims}')
         # logger.info(f'adversarial cos_sims: {[self.print_util(names[iidx], cos_sims[iidx]) for iidx in range(len(cos_sims)) if names[iidx] in self.adversarial_namelist]}')
         # logger.info(f'benign cos_sims: {[self.print_util(names[iidx], cos_sims[iidx]) for iidx in range(len(cos_sims)) if names[iidx] in self.benign_namelist]}')
@@ -1228,17 +1241,16 @@ class Helper:
         # norm_weights = cos_sims/(np.sum(cos_sims)+1e-9)
         # for i in range(len(norm_weights)):
         #     norm_weights[i] = norm_weights[i] * np.linalg.norm(clean_server_grad) / (np.linalg.norm(grads[i]))
-        trust_scores = np.zeros(cos_sims.shape)
+        trust_scores = np.zeros(cos_sims.shape, dtype=np.float32)
         for i in range(len(cos_sims)):
-            # trust_scores[i] = cos_sims[i]/np.linalg.norm(grads[i])/np.linalg.norm(clean_server_grad)
-            trust_scores[i] = cos_sims[i]
-            trust_scores[i] = max(trust_scores[i], 0)
+            trust_scores[i] = max(cos_sims[i], 0)
 
-        clipping_coeffs = np.ones(len(trust_scores))
-        for i in range(len(trust_scores)):
-            clipping_coeffs[i] = np.linalg.norm(clean_server_grad) / np.linalg.norm(grads[i])
+        clipping_coeffs = np.ones(len(trust_scores), dtype=np.float32)
+        clean_norm = max(np.linalg.norm(clean_server_grad), 1e-12)
+        for local_idx, grad_idx in enumerate(non_root_indices):
+            grad_norm = max(np.linalg.norm(grads[grad_idx]), 1e-12)
+            clipping_coeffs[local_idx] = clean_norm / grad_norm
 
-        wv = trust_scores
         sum_trust_scores = np.sum(trust_scores)
         # wv = np.ones(self.params['no_models'])
         # wv = wv/len(wv)
@@ -1261,8 +1273,20 @@ class Helper:
         #     agg_grads.append(temp)
 
         # logger.info(f'agg_grads: {self.flatten_gradient(agg_grads)}')
-        wv = [wv[c] * clipping_coeffs[c]/sum_trust_scores for c in range(len(wv))]
-        wv = np.array(wv)
+        effective_weights = trust_scores * clipping_coeffs
+        weight_sum = np.sum(effective_weights)
+        if (not np.isfinite(weight_sum)) or weight_sum <= 1e-12:
+            logger.warning(
+                'FLTrust effective weight sum is non-finite or zero; '
+                'fallback to clipping-only normalized weights for this round.'
+            )
+            effective_weights = np.nan_to_num(clipping_coeffs, nan=0.0, posinf=0.0, neginf=0.0)
+            weight_sum = np.sum(effective_weights)
+            if (not np.isfinite(weight_sum)) or weight_sum <= 1e-12:
+                logger.warning('FLTrust clipping-only weights invalid; fallback to uniform weights.')
+                effective_weights = np.ones(len(non_root_indices), dtype=np.float32)
+                weight_sum = np.sum(effective_weights)
+        wv = np.array(effective_weights / weight_sum, dtype=np.float32)
         # try:
         #     logger.info(f'adv mean wv: {np.mean(wv[adv_indices])}')
         #     logger.info(f'benign mean wv: {np.mean(wv[benign_indices])}')
@@ -1273,7 +1297,11 @@ class Helper:
 
         logger.info(f'Number of delta models: {len(delta_models)}')
         logger.info(f'Lenght of wv: {len(wv)}')
-        aggregate_weights = self.weighted_average_oracle(delta_models[:-1], torch.tensor(wv))
+        selected_delta_models = [delta_models[idx] for idx in non_root_indices]
+        if len(selected_delta_models) == 0:
+            logger.warning('FLTrust has no non-root client updates this round; skipping global update.')
+            return False, names, all_cos_sims
+        aggregate_weights = self.weighted_average_oracle(selected_delta_models, torch.tensor(wv))
 
         for name, data in target_model.state_dict().items():
             update_per_layer = aggregate_weights[name] * (self.params["eta"])
@@ -1820,6 +1848,10 @@ class Helper:
             weights: list of weights of the same length as atoms
         """
         tot_weights = torch.sum(weights)
+        if (not torch.isfinite(tot_weights)) or torch.abs(tot_weights).item() <= 1e-12:
+            logger.warning('weighted_average_oracle received invalid/zero total weights; using uniform weights fallback.')
+            weights = torch.ones(len(points), dtype=torch.float32)
+            tot_weights = torch.sum(weights)
 
         weighted_updates= dict()
 
