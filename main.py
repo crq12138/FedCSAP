@@ -283,8 +283,16 @@ def run(params_loaded):
                 config.AGGR_KRUM,
                 config.AGGR_FOOLSGOLD,
             }
+            print(
+                "[mixed-attack] IPM rewrite check: "
+                f"aggregation={helper.params['aggregation_methods']}, "
+                f"ipm_adversaries={sorted(ipm_adversaries)}"
+            )
             if ipm_adversaries and helper.params['aggregation_methods'] in ipm_supported_aggr:
                 updates = helper.ipm_attack(updates, target_names=ipm_adversaries)
+                print("[mixed-attack] IPM rewrite applied.")
+            elif ipm_adversaries:
+                print("[mixed-attack] IPM rewrite skipped (unsupported aggregation method).")
 
         is_updated = True
         if helper.params['aggregation_methods'] == config.AGGR_FLSHIELD:

@@ -567,6 +567,17 @@ class ImageHelper(Helper):
                 for adv_id in self.adversarial_namelist[offset:offset + count]:
                     self.adversary_attack_map[int(adv_id)] = method
                 offset += count
+            method_to_adv = {
+                method: sorted([aid for aid, amethod in self.adversary_attack_map.items() if amethod == method])
+                for method, _ in assignment_plan
+            }
+            print(
+                "[mixed-attack] assignment summary: "
+                f"TLF={method_to_adv.get(config.ATTACK_TLF, [])}, "
+                f"SF={method_to_adv.get(config.ATTACK_SF, [])}, "
+                f"IPM={method_to_adv.get(config.ATTACK_IPM, [])}, "
+                f"DBA={method_to_adv.get(config.ATTACK_DBA, [])}"
+            )
 
         self.benign_namelist =list(set(self.participants_list) - set(self.adversarial_namelist))
 

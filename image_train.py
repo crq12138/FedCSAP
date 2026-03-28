@@ -64,6 +64,8 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
 
         agent_name_key = agent_name_keys[model_id]
         agent_attack_method = resolve_attack_method_for_agent(agent_name_key)
+        if helper.params['attack_methods'] == config.ATTACK_MIXED_8 and agent_name_key in helper.adversarial_namelist:
+            print(f"[mixed-attack] agent={agent_name_key} assigned_attack={agent_attack_method}")
         ## Synchronize LR and models
         model = local_model
         model.copy_params(target_model.state_dict())
