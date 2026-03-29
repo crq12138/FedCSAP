@@ -10,17 +10,17 @@ set -euo pipefail
 #   bash scripts/exp_04_dba.sh run_225 run_296
 #
 # 可选环境变量：
-#   MAX_PARALLEL=3
+#   MAX_PARALLEL=1
 #   CONFIG_FILE=scripts/configs/exp_04_dba_runs.csv
 #   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 #   DRY_RUN=1   # 只打印命令，不实际启动
 
-MAX_PARALLEL=${MAX_PARALLEL:-3}
+MAX_PARALLEL=${MAX_PARALLEL:-1}
 CONFIG_FILE=${CONFIG_FILE:-scripts/configs/exp_04_dba_runs.csv}
 PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 DRY_RUN=${DRY_RUN:-0}
 export PYTORCH_CUDA_ALLOC_CONF
-POISONING_PER_BATCH=${POISONING_PER_BATCH:-5}
+POISONING_PER_BATCH=${POISONING_PER_BATCH:-60}
 
 if ! [[ "${MAX_PARALLEL}" =~ ^[1-9][0-9]*$ ]]; then
   echo "MAX_PARALLEL must be a positive integer, got: ${MAX_PARALLEL}" >&2
