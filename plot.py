@@ -25,12 +25,12 @@ PLOT_OUTPUT_DIR = Path("plot_result")
 # ========== 统一图形元素尺寸配置区域（便于调试）==========
 PLOT_STYLE = {
     "figure_size": (7.2, 4.2),  # IEEE 双栏常见宽高比例
-    "normal_marker_size": 42,
-    "malicious_marker_size": 56,
-    "label_font_size": 16,
-    "tick_font_size": 14,
-    "legend_font_size": 14,
-    "annotation_font_size": 14,
+    "normal_marker_size": 90,
+    "malicious_marker_size": 90,
+    "label_font_size": 20,
+    "tick_font_size": 18,
+    "legend_font_size": 20,
+    "annotation_font_size": 16,
     "annotation_offset": (3, 2),  # (x, y) 偏移，单位 points
     "grid_linewidth": 0.7,
     "spine_linewidth": 0.8,
@@ -173,12 +173,20 @@ def build_scatter_points(run_row: dict[str, str]) -> tuple[list[float], list[flo
 def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, title: str | None = None) -> Path:
     try:
         import matplotlib.pyplot as plt
+        from matplotlib import font_manager
         from adjustText import adjust_text  # <--- 新增：引入排斥力算法库
     except ModuleNotFoundError as exc:
         raise PlotDataError("未安装必要的绘图库，请先执行: pip install matplotlib adjustText") from exc # <--- 修改：提示中加入 adjustText
 
     if not details_csv.exists():
         raise PlotDataError(f"details CSV 不存在: {details_csv}")
+    try:
+        simhei_font_path = font_manager.findfont("SimHei", fallback_to_default=False)
+    except ValueError as exc:
+        raise PlotDataError(
+            "未找到 SimHei 字体。请先在系统中安装 SimHei（如 simhei.ttf），再执行绘图。"
+        ) from exc
+    simhei_font = font_manager.FontProperties(fname=simhei_font_path)
 
     run_row = find_target_run_row(details_csv, run_id)
     x_r_values, y_elected_counts, is_malicious_flags, client_labels = build_scatter_points(run_row)
@@ -190,8 +198,9 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
 
     plt.rcParams.update(
         {
-            "font.family": "serif",
-            "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+            "font.family": "sans-serif",
+            "font.sans-serif": ["SimHei", "DejaVu Sans"],
+            "axes.unicode_minus": False,
             "axes.linewidth": PLOT_STYLE["spine_linewidth"],
             "axes.grid": True,
             "grid.linestyle": "--",
@@ -208,7 +217,7 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
             normal_y,
             s=PLOT_STYLE["normal_marker_size"],
             alpha=0.88,
-            label="Normal",
+            label="正常参与方",
             marker="o",
             color="#1f77b4",
             edgecolors="white",
@@ -220,7 +229,7 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
             malicious_y,
             s=PLOT_STYLE["malicious_marker_size"],
             alpha=0.95,
-            label="Malicious",
+            label="恶意参与方",
             marker="X",
             color="#d62728",
             edgecolors="white",
@@ -229,9 +238,16 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
 
     # 需求：图中不显示标题（title 参数仅为兼容保留）
     _ = title
-    ax.set_xlabel("Reputation $R$", fontsize=PLOT_STYLE["label_font_size"])
-    ax.set_ylabel("Committee Elected Count", fontsize=PLOT_STYLE["label_font_size"])
-    ax.tick_params(axis="both", labelsize=PLOT_STYLE["tick_font_size"])
+    ax.set_xlabel("信誉值 R", fontsize=PLOT_STYLE["label_font_size"], fontproperties=simhei_font)
+    ax.set_ylabel("委员会当选次数", fontsize=PLOT_STYLE["label_font_size"], fontproperties=simhei_font)
+    # 实例化一个专用于刻度的 FontProperties，并赋予指定字号
+    tick_font = font_manager.FontProperties(
+        fname=simhei_font_path, 
+        size=PLOT_STYLE["tick_font_size"]
+    )
+    # 取消原本的 ax.tick_params，直接通过 set_fontproperties 一步到位
+    for tick in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
+        tick.set_fontproperties(tick_font)
 
     # 标注每个点对应 client_id
     # for x, y, cid, is_malicious in zip(x_r_values, y_elected_counts, client_labels, is_malicious_flags):
@@ -253,6 +269,7 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
             fontsize=PLOT_STYLE["annotation_font_size"],
             color="#d62728" if is_malicious else "#1f77b4",
             alpha=0.95,
+            fontproperties=simhei_font,
         )
         texts.append(txt)
 
@@ -264,7 +281,8 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
         ax=ax,
         expand_points=(1.5, 1.5),  # 调整文本与数据点之间的排斥力阈值
         expand_text=(1.2, 1.2),    # 调整文本与文本之间的排斥力阈值
-        arrowprops=dict(arrowstyle="-", color="gray", lw=0.6, alpha=0.7) # 偏移后自动生成指向原数据点的细灰线
+        # arrowprops=dict(arrowstyle="-", color="gray", lw=0.6, alpha=0.7) # 偏移后自动生成指向原数据点的细灰线
+        arrowprops=None,
     )
 
     # 横坐标范围必须包含 1.0
@@ -284,7 +302,13 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
         current_ticks = sorted(set(round(t, 6) for t in current_ticks))
         ax.set_xticks(current_ticks)
 
-    ax.legend(frameon=True, fontsize=PLOT_STYLE["legend_font_size"])
+    # 实例化一个专用于图例的 FontProperties，并赋予指定字号
+    legend_font = font_manager.FontProperties(
+        fname=simhei_font_path, 
+        size=PLOT_STYLE["legend_font_size"]
+    )
+    # 移除被忽略的 fontsize 参数，只保留 prop
+    ax.legend(frameon=True, prop=legend_font)
 
     output_stem = output.stem if output.suffix else output.name
     png_path = PLOT_OUTPUT_DIR / f"{output_stem}.png"

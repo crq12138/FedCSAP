@@ -154,7 +154,7 @@ tlf_label: {% if tlf_label is defined %}{{ tlf_label }}{% else %}'easy'{% endif 
 src_grp_mal: 3
 {% endif %}
 
-{% if get_attack_methods(attack_methods) == 'dba' %}
+{% if get_attack_methods(attack_methods) in ['dba', 'mixed_8_tlf_sf_ipm_dba'] %}
 poison_label_swap: {% if get_type(type) == 'loan' %}7{% else %}2{% endif %}
 centralized_test_trigger: False
 trigger_num: {% if get_type(type) == 'loan' %}3{% else %}4{% endif %}

@@ -17,7 +17,7 @@ set -euo pipefail
 #   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 #   DBA_POISONING_PER_BATCH=60
 
-CONFIG_FILE=${CONFIG_FILE:-scripts/config/exp_05_complex_attack/runs.csv}
+CONFIG_FILE=${CONFIG_FILE:-scripts/configs/exp_05_complex_attack_runs.csv}
 MAX_PARALLEL=${MAX_PARALLEL:-3}
 DRY_RUN=${DRY_RUN:-0}
 PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
@@ -85,7 +85,7 @@ start_run() {
     --number_of_adversary_sf=2
     --number_of_adversary_inner_product_manipulation=2
     --number_of_adversary_dba=2
-    --tlf_label=easy
+    --tlf_label=medium
     --mal_pcnt=0.32
     --poisoning_per_batch="${DBA_POISONING_PER_BATCH}"
     --resumed_model=false
