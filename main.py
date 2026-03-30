@@ -96,6 +96,51 @@ def _is_enabled(value):
         return value != 0
     return str(value).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
 
+
+def _scale_value(value, scale):
+    if torch.is_tensor(value):
+        return value * scale
+    if isinstance(value, np.ndarray):
+        return value * scale
+    if isinstance(value, dict):
+        return {k: _scale_value(v, scale) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scale_value(v, scale) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_scale_value(v, scale) for v in value)
+    if isinstance(value, (int, float, np.number)):
+        return value * scale
+    return value
+
+
+def _rewrite_updates_for_committee_takeover(updates, scale=-1.0):
+    rewritten = {}
+    for client_name, update_payload in updates.items():
+        if not isinstance(update_payload, tuple):
+            rewritten[client_name] = update_payload
+            continue
+
+        if len(update_payload) == 3:
+            num_samples, client_grad, client_delta = update_payload
+            rewritten[client_name] = (
+                num_samples,
+                _scale_value(client_grad, scale),
+                _scale_value(client_delta, scale),
+            )
+        elif len(update_payload) == 2:
+            num_samples, client_delta = update_payload
+            rewritten[client_name] = (
+                num_samples,
+                _scale_value(client_delta, scale),
+            )
+        else:
+            rewritten[client_name] = update_payload
+    return rewritten
+
+
+def _rewrite_weight_accumulator_for_committee_takeover(weight_accumulator, scale=-1.0):
+    return {layer_name: _scale_value(layer_data, scale) for layer_name, layer_data in weight_accumulator.items()}
+
 def configure_run_logging(run_name):
     run_folder = os.path.join('runs', run_name)
     os.makedirs(run_folder, exist_ok=True)
@@ -293,6 +338,18 @@ def run(params_loaded):
                 print("[mixed-attack] IPM rewrite applied.")
             elif ipm_adversaries:
                 print("[mixed-attack] IPM rewrite skipped (unsupported aggregation method).")
+
+        if committee_takeover_attack_triggered and helper.params['aggregation_methods'] != config.AGGR_FEDCSAP:
+            updates = _rewrite_updates_for_committee_takeover(updates, scale=-1.0)
+            weight_accumulator = _rewrite_weight_accumulator_for_committee_takeover(weight_accumulator, scale=-1.0)
+            logger.warning(
+                'epoch %s: committee takeover attack triggered outside fedcsap; rewrote all client updates with scale=-1.0.',
+                epoch,
+            )
+            print(
+                f'[committee-takeover] epoch={epoch} aggregation={helper.params["aggregation_methods"]} '
+                'triggered outside fedcsap; all updates rewritten with scale=-1.0.'
+            )
 
         is_updated = True
         if helper.params['aggregation_methods'] == config.AGGR_FLSHIELD:
