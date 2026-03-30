@@ -1,0 +1,13 @@
+run_tag,type,aggregation_method,committee_election,fedcsap_committee_takeover_attack
+run_394,cifar,fedavg,random,true
+run_395,pathmnist,fedavg,random,true
+run_396,mnist,fedavg,random,true
+run_397,cifar,fedavg,reputation,true
+run_398,pathmnist,fedavg,reputation,true
+run_399,mnist,fedavg,reputation,true
+run_400,cifar,fedcsap,random,true
+run_401,pathmnist,fedcsap,random,true
+run_402,mnist,fedcsap,random,true
+run_403,cifar,fedcsap,reputation,true
+run_404,pathmnist,fedcsap,reputation,true
+run_405,mnist,fedcsap,reputation,true
