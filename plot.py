@@ -21,6 +21,45 @@ from typing import Iterable
 
 CLIENT_COUNT = 25
 PLOT_OUTPUT_DIR = Path("plot_result")
+DEFAULT_RUN_MAPPING = {
+    "CIFAR": {
+        373: "FedAvg",
+        374: "Median",
+        375: "KRUM",
+        376: "FoolsGold",
+        377: "FLTrust",
+        378: "AFA",
+        379: "FedCSAP",
+    },
+    "PATHMNIST": {
+        380: "FedAvg",
+        381: "Median",
+        382: "KRUM",
+        383: "FoolsGold",
+        384: "FLTrust",
+        385: "AFA",
+        386: "FedCSAP",
+    },
+    "MNIST": {
+        387: "FedAvg",
+        388: "Median",
+        389: "KRUM",
+        390: "FoolsGold",
+        391: "FLTrust",
+        392: "AFA",
+        393: "FedCSAP",
+    },
+}
+DATASET_ROUND_LIMITS = {"CIFAR": 200, "PATHMNIST": 150, "MNIST": 100}
+SCHEME_NAME_CANONICAL = {
+    "fedavg": "FedAvg",
+    "median": "Median",
+    "krum": "KRUM",
+    "foolsgold": "FoolsGold",
+    "fltrust": "FLTrust",
+    "afa": "AFA",
+    "fedcsap": "FedCSAP",
+}
 
 # ========== 统一图形元素尺寸配置区域（便于调试）==========
 PLOT_STYLE = {
@@ -40,6 +79,11 @@ PLOT_STYLE = {
 
 class PlotDataError(Exception):
     """绘图数据异常。"""
+
+
+def canonicalize_scheme_name(raw_name: str) -> str:
+    normalized = "".join(str(raw_name).strip().split()).lower()
+    return SCHEME_NAME_CANONICAL.get(normalized, str(raw_name).strip())
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,6 +121,28 @@ def parse_args() -> argparse.Namespace:
         "--title",
         default=None,
         help="图标题（可选，不传则自动生成）",
+    )
+    curve_parser = subparsers.add_parser(
+        "compare_training_curves",
+        help="绘制对比实验训练曲线（ACC/F1）",
+    )
+    curve_parser.add_argument(
+        "--runs-root",
+        type=Path,
+        default=Path("runs"),
+        help="runs 根目录，目录结构示例: runs/run_373/global_metrics.csv",
+    )
+    curve_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=PLOT_OUTPUT_DIR / "compare_training_curves",
+        help="输出目录（自动生成 6 张图）",
+    )
+    curve_parser.add_argument(
+        "--run-map-csv",
+        type=Path,
+        default=None,
+        help="可选：run_id, dataset, scheme 三列映射文件；不传则使用内置映射。",
     )
 
     return parser.parse_args()
@@ -323,6 +389,125 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
     return png_path
 
 
+def _load_run_mapping(run_map_csv: Path | None) -> dict[str, dict[int, str]]:
+    if run_map_csv is None:
+        return DEFAULT_RUN_MAPPING
+    if not run_map_csv.exists():
+        raise PlotDataError(f"run 映射文件不存在: {run_map_csv}")
+    mapping: dict[str, dict[int, str]] = {}
+    with run_map_csv.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"run_id", "dataset", "scheme"}
+        fields = set(reader.fieldnames or [])
+        if not required.issubset(fields):
+            raise PlotDataError("run 映射 CSV 必须包含列: run_id,dataset,scheme")
+        for row in reader:
+            run_id = int(str(row["run_id"]).strip())
+            dataset = str(row["dataset"]).strip().upper()
+            scheme = canonicalize_scheme_name(str(row["scheme"]))
+            if dataset not in DATASET_ROUND_LIMITS:
+                continue
+            mapping.setdefault(dataset, {})[run_id] = scheme
+    return mapping
+
+
+def _load_global_metrics(metrics_csv: Path, round_limit: int) -> tuple[list[int], list[float], list[float]]:
+    with metrics_csv.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"epoch", "global_acc", "global_macro_f1"}
+        fields = set(reader.fieldnames or [])
+        if not required.issubset(fields):
+            raise PlotDataError(f"{metrics_csv} 缺失必要列: epoch,global_acc,global_macro_f1")
+        rows = list(reader)[:round_limit]
+    if not rows:
+        raise PlotDataError(f"{metrics_csv} 无可用数据。")
+    epochs = [int(float(str(r["epoch"]).strip())) for r in rows]
+    acc = [float(str(r["global_acc"]).strip()) for r in rows]
+    f1 = [float(str(r["global_macro_f1"]).strip()) for r in rows]
+    return epochs, acc, f1
+
+
+def plot_compare_training_curves(
+    runs_root: Path,
+    output_dir: Path,
+    run_map_csv: Path | None = None,
+) -> list[Path]:
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib import font_manager
+    except ModuleNotFoundError as exc:
+        raise PlotDataError("未安装 matplotlib，请先执行: pip install matplotlib") from exc
+
+    if not runs_root.exists():
+        raise PlotDataError(f"runs 根目录不存在: {runs_root}")
+
+    try:
+        simhei_font_path = font_manager.findfont("SimHei", fallback_to_default=False)
+    except ValueError as exc:
+        raise PlotDataError("未找到 SimHei 字体，请先安装 SimHei（simhei.ttf）。") from exc
+    simhei_font = font_manager.FontProperties(fname=simhei_font_path)
+
+    run_mapping = _load_run_mapping(run_map_csv)
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.sans-serif": ["SimHei", "DejaVu Sans"],
+            "axes.unicode_minus": False,
+            "axes.linewidth": 0.8,
+            "axes.grid": True,
+            "grid.linestyle": "--",
+            "grid.alpha": 0.35,
+            "grid.linewidth": 0.7,
+            "legend.frameon": True,
+            "savefig.bbox": "tight",
+        }
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[Path] = []
+    for dataset in ("CIFAR", "PATHMNIST", "MNIST"):
+        dataset_runs = run_mapping.get(dataset, {})
+        if not dataset_runs:
+            continue
+        round_limit = DATASET_ROUND_LIMITS[dataset]
+        curves: dict[str, dict[str, list[float] | list[int]]] = {}
+        for run_id, scheme in sorted(dataset_runs.items()):
+            csv_path = runs_root / f"run_{run_id}" / "global_metrics.csv"
+            if not csv_path.exists():
+                raise PlotDataError(f"缺少文件: {csv_path}")
+            epochs, acc, f1 = _load_global_metrics(csv_path, round_limit)
+            curves[scheme] = {"epoch": epochs, "acc": acc, "f1": f1}
+        for metric_key, metric_cn in (("acc", "ACC"), ("f1", "F1")):
+            fig, ax = plt.subplots(figsize=(7.2, 4.2))
+            for scheme, vals in curves.items():
+                ax.plot(
+                    vals["epoch"],
+                    vals[metric_key],
+                    linewidth=2.0,
+                    label=scheme,
+                )
+            ax.set_xlabel("轮次", fontsize=16, fontproperties=simhei_font)
+            ax.set_ylabel(metric_cn, fontsize=16, fontproperties=simhei_font)
+            ax.set_title(f"{dataset} 数据集 {metric_cn} 训练曲线", fontsize=17, fontproperties=simhei_font)
+            ax.set_xlim(1, round_limit)
+            for tick in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
+                tick.set_fontproperties(simhei_font)
+                tick.set_fontsize(12)
+            legend_font = font_manager.FontProperties(fname=simhei_font_path, size=12)
+            ax.legend(prop=legend_font, ncol=2)
+            fig.tight_layout()
+            out_png = output_dir / f"{dataset}_{metric_key}_curves.png"
+            out_eps = output_dir / f"{dataset}_{metric_key}_curves.eps"
+            fig.savefig(out_png, dpi=300)
+            fig.savefig(out_eps, format="eps")
+            plt.close(fig)
+            saved.extend([out_png, out_eps])
+            print(f"绘图完成: {out_png}")
+            print(f"绘图完成: {out_eps}")
+    if not saved:
+        raise PlotDataError("未生成任何图，请检查 run 映射配置。")
+    return saved
+
+
 def main() -> None:
     args = parse_args()
 
@@ -334,6 +519,14 @@ def main() -> None:
             title=args.title,
         )
         print(f"主输出文件: {out}")
+        return
+    if args.plot_type == "compare_training_curves":
+        outs = plot_compare_training_curves(
+            runs_root=args.runs_root,
+            output_dir=args.output_dir,
+            run_map_csv=args.run_map_csv,
+        )
+        print(f"主输出文件: {outs[0]}")
         return
 
     raise PlotDataError(f"不支持的 plot_type: {args.plot_type}")
