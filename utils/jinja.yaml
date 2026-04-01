@@ -221,7 +221,7 @@ resumed_model: {% if get_type(type) == 'pathmnist' %}{{ resumed_model|default('f
 {% if get_type(type) == 'fmnist' %}
 resumed_model_name: utils/model_bank/fmnist/model_last.pt.tar.epoch_35
 {% elif get_type(type) == 'cifar' %}
-resumed_model_name: utils/model_bank/cifar/model_last.pt.tar.epoch_200
+resumed_model_name: utils/model_bank/cifar/model_last.pt.tar.epoch_100
 {% elif get_type(type) == 'emnist' %}
 resumed_model_name: utils/model_bank/emnist/model_last.pt.tar.epoch_35
 {% elif get_type(type) == 'emnist_letters' %}

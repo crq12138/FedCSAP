@@ -70,6 +70,12 @@ SCHEME_MARKERS = {
     "FedCSAP": "*",
 }
 SCHEME_COLORS = {
+    "FedAvg": "#1f77b4",
+    "Median": "#ff7f0e",
+    "KRUM": "#2ca02c",
+    "FoolsGold": "#f1c40f",
+    "FLTrust": "#9467bd",
+    "AFA": "#8c564b",
     "FedCSAP": "#d62728",
 }
 
@@ -80,7 +86,7 @@ PLOT_STYLE = {
     "malicious_marker_size": 90,
     "label_font_size": 20,
     "tick_font_size": 18,
-    "legend_font_size": 20,
+    "legend_font_size": 14,
     "annotation_font_size": 16,
     "annotation_offset": (3, 2),  # (x, y) 偏移，单位 points
     "grid_linewidth": 0.7,
@@ -442,6 +448,10 @@ def _load_global_metrics(
     epochs = [int(float(str(r["epoch"]).strip())) for r in rows]
     acc = [float(str(r["global_acc"]).strip()) for r in rows]
     f1 = [float(str(r["global_macro_f1"]).strip()) for r in rows]
+    if epochs and epochs[0] > 0:
+        epochs = [0, *epochs]
+        acc = [acc[0], *acc]
+        f1 = [f1[0], *f1]
     return epochs, acc, f1
 
 
@@ -494,26 +504,27 @@ def plot_compare_training_curves(
                 raise PlotDataError(f"缺少文件: {csv_path}")
             epochs, acc, f1 = _load_global_metrics(csv_path, round_limit, sample_every=5)
             curves[scheme] = {"epoch": epochs, "acc": acc, "f1": f1}
-        for metric_key, metric_cn in (("acc", "ACC"), ("f1", "F1")):
+        for metric_key, metric_cn in (("acc", "精确率"), ("f1", "F1分数")):
             fig, ax = plt.subplots(figsize=(7.2, 4.2))
             for scheme, vals in curves.items():
                 is_fedcsap = scheme == "FedCSAP"
                 ax.plot(
                     vals["epoch"],
                     vals[metric_key],
-                    linewidth=2.8 if is_fedcsap else 2.0,
+                    linewidth=2.0,
                     label=scheme,
                     marker=SCHEME_MARKERS.get(scheme, "o"),
-                    markersize=8 if is_fedcsap else 6,
+                    markersize=6 if is_fedcsap else 4,
                     color=SCHEME_COLORS.get(scheme),
                 )
-            ax.set_xlabel("轮次", fontsize=16, fontproperties=simhei_font)
-            ax.set_ylabel(metric_cn, fontsize=16, fontproperties=simhei_font)
-            ax.set_xlim(1, round_limit)
+            ax.set_xlabel("训练轮次", fontsize=14, fontproperties=simhei_font)
+            ax.set_ylabel(metric_cn, fontsize=14, fontproperties=simhei_font)
+            ax.set_xlim(0, round_limit)
+            # ax.set_xlim(1, round_limit)
             for tick in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
                 tick.set_fontproperties(simhei_font)
                 tick.set_fontsize(12)
-            legend_font = font_manager.FontProperties(fname=simhei_font_path, size=12)
+            legend_font = font_manager.FontProperties(fname=simhei_font_path, size=10)
             ax.legend(prop=legend_font, ncol=2)
             fig.tight_layout()
             out_png = output_dir / f"{dataset}_{metric_key}_curves.png"

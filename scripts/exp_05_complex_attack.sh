@@ -58,9 +58,9 @@ fi
 
 epochs_for_dataset() {
   case "$1" in
-    cifar) echo 210 ;;
+    cifar) echo 200 ;;
     pathmnist) echo 150 ;;
-    mnist) echo 200 ;;
+    mnist) echo 100 ;;
     *)
       echo "Unsupported dataset type: $1" >&2
       exit 1
@@ -101,6 +101,8 @@ start_run() {
     --seed=0
     --complex_attack_mode=mixed_8_tlf_sf_ipm_dba
     --"${run_tag}"
+    # --resumed_model=true 
+    # --resumed_model_name=utils/model_bank/cifar/model_last.pt.tar.epoch_100
   )
 
   if [[ "${aggregation_method}" == "flshield" ]]; then

@@ -67,9 +67,9 @@ fi
 
 epochs_for_dataset() {
   case "$1" in
-    cifar) echo 210 ;;
+    cifar) echo 200 ;;
     pathmnist) echo 150 ;;
-    mnist) echo 200 ;;
+    mnist) echo 100 ;;
     *)
       echo "Unsupported dataset type: $1" >&2
       exit 1
@@ -111,6 +111,8 @@ start_run() {
     --committee_election="${committee_election}"
     --fedcsap_committee_takeover_attack="${takeover_attack_switch}"
     --seed=0
+    # --resumed_model=true 
+    # --resumed_model_name=utils/model_bank/cifar/model_last.pt.tar.epoch_100
     --complex_attack_mode=mixed_8_tlf_sf_ipm_dba
     --"${run_tag}"
   )

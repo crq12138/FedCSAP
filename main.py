@@ -340,8 +340,9 @@ def run(params_loaded):
                 print("[mixed-attack] IPM rewrite skipped (unsupported aggregation method).")
 
         if committee_takeover_attack_triggered and helper.params['aggregation_methods'] != config.AGGR_FEDCSAP:
-            updates = _rewrite_updates_for_committee_takeover(updates, scale=-1.0)
-            weight_accumulator = _rewrite_weight_accumulator_for_committee_takeover(weight_accumulator, scale=-1.0)
+            take_over_scale = -0.1
+            updates = _rewrite_updates_for_committee_takeover(updates, scale=take_over_scale)
+            weight_accumulator = _rewrite_weight_accumulator_for_committee_takeover(weight_accumulator, scale=take_over_scale)
             logger.warning(
                 'epoch %s: committee takeover attack triggered outside fedcsap; rewrote all client updates with scale=-1.0.',
                 epoch,
@@ -406,8 +407,8 @@ def run(params_loaded):
         if len(csv_record.scale_temp_one_row)>0:
             csv_record.scale_temp_one_row.append(round(epoch_acc, 4))
 
-        if (helper.params['is_poison'] or True) and helper.params['attack_methods'] in [config.ATTACK_DBA, config.ATTACK_TLF, config.ATTACK_AOTT, config.ATTACK_SEMANTIC]:
-            if helper.params['attack_methods'] == config.ATTACK_DBA:
+        if (helper.params['is_poison'] or True) and helper.params['attack_methods'] in [config.ATTACK_DBA, config.ATTACK_MIXED_8, config.ATTACK_TLF, config.ATTACK_AOTT, config.ATTACK_SEMANTIC]:
+            if helper.params['attack_methods'] in [config.ATTACK_DBA, config.ATTACK_MIXED_8]:
                 epoch_loss, epoch_acc_p, epoch_corret, epoch_total = test.Mytest_poison(helper=helper,
                                                                                         epoch=temp_global_epoch,
                                                                                         model=helper.target_model,

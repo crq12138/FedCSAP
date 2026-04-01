@@ -107,7 +107,7 @@ class ImageHelper(Helper):
                 # loaded_params = torch.load(f"saved_models/{self.params['resumed_model_name']}",map_location='cpu')
                 loaded_params = torch.load(f"{self.params['resumed_model_name']}",map_location='cpu')
             target_model.load_state_dict(loaded_params['state_dict'])
-            self.start_epoch = loaded_params['epoch']+1
+            self.start_epoch = 1
             self.params['lr'] = loaded_params.get('lr', self.params['lr'])
             logger.info(f"Loaded parameters from saved model: LR is"
                         f" {self.params['lr']} and current epoch is {self.start_epoch}")

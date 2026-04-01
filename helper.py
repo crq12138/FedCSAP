@@ -1677,9 +1677,11 @@ class Helper:
     def foolsgold_update(self,target_model,updates):
         alphas = []
         names = []
+        client_grads = []
         delta_models = []
         for name, data in updates.items():
             alphas.append(data[0])  # num_samples
+            client_grads.append(data[1])  # gradient
             delta_models.append(data[2])
             names.append(name)
         
