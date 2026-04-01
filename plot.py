@@ -60,6 +60,18 @@ SCHEME_NAME_CANONICAL = {
     "afa": "AFA",
     "fedcsap": "FedCSAP",
 }
+SCHEME_MARKERS = {
+    "FedAvg": "o",
+    "Median": "s",
+    "KRUM": "^",
+    "FoolsGold": "D",
+    "FLTrust": "v",
+    "AFA": "P",
+    "FedCSAP": "*",
+}
+SCHEME_COLORS = {
+    "FedCSAP": "#d62728",
+}
 
 # ========== 统一图形元素尺寸配置区域（便于调试）==========
 PLOT_STYLE = {
@@ -411,7 +423,11 @@ def _load_run_mapping(run_map_csv: Path | None) -> dict[str, dict[int, str]]:
     return mapping
 
 
-def _load_global_metrics(metrics_csv: Path, round_limit: int) -> tuple[list[int], list[float], list[float]]:
+def _load_global_metrics(
+    metrics_csv: Path,
+    round_limit: int,
+    sample_every: int = 5,
+) -> tuple[list[int], list[float], list[float]]:
     with metrics_csv.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         required = {"epoch", "global_acc", "global_macro_f1"}
@@ -419,6 +435,8 @@ def _load_global_metrics(metrics_csv: Path, round_limit: int) -> tuple[list[int]
         if not required.issubset(fields):
             raise PlotDataError(f"{metrics_csv} 缺失必要列: epoch,global_acc,global_macro_f1")
         rows = list(reader)[:round_limit]
+    if sample_every > 1:
+        rows = [r for r in rows if int(float(str(r["epoch"]).strip())) % sample_every == 0]
     if not rows:
         raise PlotDataError(f"{metrics_csv} 无可用数据。")
     epochs = [int(float(str(r["epoch"]).strip())) for r in rows]
@@ -474,20 +492,23 @@ def plot_compare_training_curves(
             csv_path = runs_root / f"run_{run_id}" / "global_metrics.csv"
             if not csv_path.exists():
                 raise PlotDataError(f"缺少文件: {csv_path}")
-            epochs, acc, f1 = _load_global_metrics(csv_path, round_limit)
+            epochs, acc, f1 = _load_global_metrics(csv_path, round_limit, sample_every=5)
             curves[scheme] = {"epoch": epochs, "acc": acc, "f1": f1}
         for metric_key, metric_cn in (("acc", "ACC"), ("f1", "F1")):
             fig, ax = plt.subplots(figsize=(7.2, 4.2))
             for scheme, vals in curves.items():
+                is_fedcsap = scheme == "FedCSAP"
                 ax.plot(
                     vals["epoch"],
                     vals[metric_key],
-                    linewidth=2.0,
+                    linewidth=2.8 if is_fedcsap else 2.0,
                     label=scheme,
+                    marker=SCHEME_MARKERS.get(scheme, "o"),
+                    markersize=8 if is_fedcsap else 6,
+                    color=SCHEME_COLORS.get(scheme),
                 )
             ax.set_xlabel("轮次", fontsize=16, fontproperties=simhei_font)
             ax.set_ylabel(metric_cn, fontsize=16, fontproperties=simhei_font)
-            ax.set_title(f"{dataset} 数据集 {metric_cn} 训练曲线", fontsize=17, fontproperties=simhei_font)
             ax.set_xlim(1, round_limit)
             for tick in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
                 tick.set_fontproperties(simhei_font)
