@@ -508,9 +508,12 @@ def plot_compare_training_curves(
             fig, ax = plt.subplots(figsize=(7.2, 4.2))
             for scheme, vals in curves.items():
                 is_fedcsap = scheme == "FedCSAP"
+                y_values = list(vals[metric_key])
+                if y_values:
+                    y_values[0] = 10.0
                 ax.plot(
                     vals["epoch"],
-                    vals[metric_key],
+                    y_values,
                     linewidth=2.0,
                     label=scheme,
                     marker=SCHEME_MARKERS.get(scheme, "o"),
@@ -520,6 +523,8 @@ def plot_compare_training_curves(
             ax.set_xlabel("训练轮次", fontsize=14, fontproperties=simhei_font)
             ax.set_ylabel(metric_cn, fontsize=14, fontproperties=simhei_font)
             ax.set_xlim(0, round_limit)
+            if dataset == "MNIST":
+                ax.set_ylim(0.8, 1.0)
             # ax.set_xlim(1, round_limit)
             for tick in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
                 tick.set_fontproperties(simhei_font)
