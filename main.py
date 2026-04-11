@@ -340,7 +340,7 @@ def run(params_loaded):
                 print("[mixed-attack] IPM rewrite skipped (unsupported aggregation method).")
 
         if committee_takeover_attack_triggered and helper.params['aggregation_methods'] != config.AGGR_FEDCSAP:
-            take_over_scale = -0.1
+            take_over_scale = 1.0
             updates = _rewrite_updates_for_committee_takeover(updates, scale=take_over_scale)
             weight_accumulator = _rewrite_weight_accumulator_for_committee_takeover(weight_accumulator, scale=take_over_scale)
             logger.warning(

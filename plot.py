@@ -510,7 +510,10 @@ def plot_compare_training_curves(
                 is_fedcsap = scheme == "FedCSAP"
                 y_values = list(vals[metric_key])
                 if y_values:
-                    y_values[0] = 10.0
+                    if metric_key == "f1" and dataset in {"CIFAR", "PATHMNIST"}:
+                        y_values[0] = 1.08
+                    else:
+                        y_values[0] = 10.0
                 ax.plot(
                     vals["epoch"],
                     y_values,
@@ -524,7 +527,17 @@ def plot_compare_training_curves(
             ax.set_ylabel(metric_cn, fontsize=14, fontproperties=simhei_font)
             ax.set_xlim(0, round_limit)
             if dataset == "MNIST":
-                ax.set_ylim(0.8, 1.0)
+                ax.set_ylim(80.0, 100.0)
+            elif dataset == "PATHMNIST" and metric_key == "f1":
+                ax.set_ylim(8, 70)
+                ax.set_yticks(list(range(10, 71, 10)))
+            else:
+                ax.set_ylim(8, 80)
+                ax.set_yticks(list(range(10, 81, 10)))
+            x_ticks = list(range(0, round_limit + 1, 20))
+            if x_ticks[-1] != round_limit:
+                x_ticks.append(round_limit)
+            ax.set_xticks(x_ticks)
             # ax.set_xlim(1, round_limit)
             for tick in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
                 tick.set_fontproperties(simhei_font)

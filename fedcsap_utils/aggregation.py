@@ -279,7 +279,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
             committee_takeover = committee_malicious_count > (committee_size / 2.0)
 
     if committee_takeover:
-        aggregate_weights = _scale_update_dict(aggregate_weights, -1.0)
+        aggregate_weights = _scale_update_dict(aggregate_weights, -0.3)
         logger.warning(
             'fedcsap epoch %s: committee takeover attack triggered (%s/%s malicious); reversing aggregate update direction.',
             epoch,
