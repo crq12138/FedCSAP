@@ -20,3 +20,6 @@ run_390,mnist,foolsgold
 run_391,mnist,fltrust
 run_392,mnist,afa
 run_393,mnist,fedcsap
+run_442,cifar,frfl
+run_443,pathmnist,frfl
+run_444,mnist,frfl
