@@ -20,6 +20,7 @@ AGGR_FLTRUST = 'fltrust'
 AGGR_FLSHIELD = 'flshield'
 AGGR_FEDCSAP = 'fedcsap'
 AGGR_AFA = 'afa'
+AGGR_FRFL = 'frfl'
 
 ATTACK_DBA = 'dba'
 ATTACK_TLF = 'targeted_label_flip'
@@ -40,6 +41,7 @@ def normalize_aggregation_method(method):
         'fedavg': AGGR_FEDAVG,
         'avg': AGGR_MEAN,
         'afa': AGGR_AFA,
+        'frfl': AGGR_FRFL,
     }
     return alias_map.get(normalized, normalized)
 
