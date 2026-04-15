@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 实验七：FRFL 对比实验（MNIST/PATHMNIST/CIFAR10 × TLF/SF/IPM/DBA × 强度2/5/8）
+#
+# 36次执行 = 3种数据集 × 4种攻击 × 3种攻击强度
+# 默认读取 scripts/configs/exp_07_frfl_runs.csv
+#
+# 用法：
+#   bash scripts/exp_07_frfl.sh
+#   bash scripts/exp_07_frfl.sh run_406 run_441
+#
+# 可选环境变量：
+#   CONFIG_FILE=scripts/configs/exp_07_frfl_runs.csv
+#   MAX_PARALLEL=3
+#   DRY_RUN=1
+#   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+#   POISONING_PER_BATCH=60
+#   FRFL_VALIDATION_RATIO=0.2
+#   FRFL_NUM_VALIDATORS=null
+#   FRFL_XI1=1.0
+#   FRFL_XI2=1.0
+#   FRFL_XI_MIN=0.05
+#   FRFL_XI_MAX=5.0
+#   FRFL_MEAN_MEDIAN_TOL=1e-8
+#   FRFL_ADAPT_CLIP=0.25
+#   FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION=true
+#   COMMITTEE_ELECTION=random
+
+CONFIG_FILE=${CONFIG_FILE:-scripts/configs/exp_07_frfl_runs.csv}
+MAX_PARALLEL=${MAX_PARALLEL:-3}
+DRY_RUN=${DRY_RUN:-0}
+PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+POISONING_PER_BATCH=${POISONING_PER_BATCH:-60}
+FRFL_VALIDATION_RATIO=${FRFL_VALIDATION_RATIO:-0.2}
+FRFL_NUM_VALIDATORS=${FRFL_NUM_VALIDATORS:-null}
+FRFL_XI1=${FRFL_XI1:-1.0}
+FRFL_XI2=${FRFL_XI2:-1.0}
+FRFL_XI_MIN=${FRFL_XI_MIN:-0.05}
+FRFL_XI_MAX=${FRFL_XI_MAX:-5.0}
+FRFL_MEAN_MEDIAN_TOL=${FRFL_MEAN_MEDIAN_TOL:-1e-8}
+FRFL_ADAPT_CLIP=${FRFL_ADAPT_CLIP:-0.25}
+FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION=${FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION:-true}
+COMMITTEE_ELECTION=${COMMITTEE_ELECTION:-random}
+export PYTORCH_CUDA_ALLOC_CONF
+
+if [[ ! -f "${CONFIG_FILE}" ]]; then
+  echo "Config file not found: ${CONFIG_FILE}" >&2
+  exit 1
+fi
+
+if ! [[ "${MAX_PARALLEL}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "MAX_PARALLEL must be a positive integer, got: ${MAX_PARALLEL}" >&2
+  exit 1
+fi
+
+if ! [[ "${POISONING_PER_BATCH}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "POISONING_PER_BATCH must be a positive integer, got: ${POISONING_PER_BATCH}" >&2
+  exit 1
+fi
+
+normalize_run_id() {
+  local input="$1"
+  if [[ "${input}" =~ ^run_([0-9]+)$ ]]; then
+    echo $((10#${BASH_REMATCH[1]}))
+  elif [[ "${input}" =~ ^([0-9]+)$ ]]; then
+    echo $((10#${BASH_REMATCH[1]}))
+  else
+    echo "Invalid run id: ${input}. Use 406 or run_406 format." >&2
+    exit 1
+  fi
+}
+
+START_INPUT=${1:-run_406}
+END_INPUT=${2:-run_441}
+START_ID=$(normalize_run_id "${START_INPUT}")
+END_ID=$(normalize_run_id "${END_INPUT}")
+
+if (( START_ID > END_ID )); then
+  echo "Start run must be <= end run. Got: ${START_INPUT} .. ${END_INPUT}" >&2
+  exit 1
+fi
+
+epochs_for_dataset() {
+  case "$1" in
+    mnist) echo 100 ;;
+    pathmnist) echo 150 ;;
+    cifar) echo 200 ;;
+    *)
+      echo "Unsupported dataset type: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+attack_method_from_code() {
+  case "$1" in
+    TLF) echo targeted_label_flip ;;
+    SF) echo sf ;;
+    IPM) echo inner_product_manipulation ;;
+    DBA) echo dba ;;
+    *)
+      echo "Unsupported attack code: $1. Allowed: TLF/SF/IPM/DBA" >&2
+      exit 1
+      ;;
+  esac
+}
+
+mal_pcnt_for_strength() {
+  case "$1" in
+    2) echo 0.1 ;;
+    5) echo 0.2 ;;
+    8) echo 0.3 ;;
+    *)
+      echo "Unsupported attack_strength: $1. Allowed: 2/5/8" >&2
+      exit 1
+      ;;
+  esac
+}
+
+start_run() {
+  local run_tag="$1"
+  local type="$2"
+  local attack_code="$3"
+  local attack_strength="$4"
+  local aggregation_method="$5"
+
+  local attack_method
+  attack_method=$(attack_method_from_code "${attack_code}")
+
+  local mal_pcnt
+  mal_pcnt=$(mal_pcnt_for_strength "${attack_strength}")
+
+  local epochs
+  epochs=$(epochs_for_dataset "${type}")
+
+  local cmd=(
+    python main.py
+    --type="${type}"
+    --aggregation_methods="${aggregation_method}"
+    --attack_methods="${attack_method}"
+    --"number_of_adversary_${attack_method}"="${attack_strength}"
+    --mal_pcnt="${mal_pcnt}"
+    --poisoning_per_batch="${POISONING_PER_BATCH}"
+    --resumed_model=false
+    --epochs="${epochs}"
+    --number_of_total_participants=25
+    --committee_size=5
+    --no_models=20
+    --noniid=sampling_dirichlet
+    --dirichlet_alpha=0.9
+    --eta=0.1
+    --committee_election="${COMMITTEE_ELECTION}"
+    --frfl_validation_ratio="${FRFL_VALIDATION_RATIO}"
+    --frfl_num_validators="${FRFL_NUM_VALIDATORS}"
+    --frfl_xi1="${FRFL_XI1}"
+    --frfl_xi2="${FRFL_XI2}"
+    --frfl_xi_min="${FRFL_XI_MIN}"
+    --frfl_xi_max="${FRFL_XI_MAX}"
+    --frfl_mean_median_tol="${FRFL_MEAN_MEDIAN_TOL}"
+    --frfl_adapt_clip="${FRFL_ADAPT_CLIP}"
+    --frfl_exclude_malicious_from_validation="${FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION}"
+    --seed=0
+    --"${run_tag}"
+  )
+
+  if [[ "${aggregation_method}" == "flshield" ]]; then
+    cmd+=(--bijective_flshield)
+  fi
+
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    printf 'DRY_RUN: %q ' "${cmd[@]}"
+    echo
+    return 0
+  fi
+
+  nohup "${cmd[@]}" > /dev/null 2>&1 &
+  echo "Started ${run_tag}: type=${type}, attack=${attack_code}, attack_method=${attack_method}, strength=${attack_strength}, mal_pcnt=${mal_pcnt}, aggregation=${aggregation_method}, pid=$!"
+}
+
+group_index=1
+jobs_in_group=0
+selected_count=0
+
+while IFS=, read -r run_tag type attack_code attack_strength aggregation_method; do
+  if [[ "${run_tag}" == "run_tag" ]]; then
+    continue
+  fi
+
+  run_num=$(normalize_run_id "${run_tag}")
+  if (( run_num < START_ID || run_num > END_ID )); then
+    continue
+  fi
+
+  if (( jobs_in_group == 0 )); then
+    echo "===== Group ${group_index} started (max parallel: ${MAX_PARALLEL}) ====="
+  fi
+
+  start_run "${run_tag}" "${type}" "${attack_code}" "${attack_strength}" "${aggregation_method}"
+  selected_count=$((selected_count + 1))
+  jobs_in_group=$((jobs_in_group + 1))
+
+  if (( jobs_in_group == MAX_PARALLEL )); then
+    if [[ "${DRY_RUN}" != "1" ]]; then
+      echo "===== Group ${group_index} waiting for ${jobs_in_group} job(s) to finish ====="
+      wait
+      echo "===== Group ${group_index} finished ====="
+    else
+      echo "===== Group ${group_index} dry-run finished (${jobs_in_group} job(s)) ====="
+    fi
+    group_index=$((group_index + 1))
+    jobs_in_group=0
+  fi
+done < "${CONFIG_FILE}"
+
+if (( jobs_in_group > 0 )); then
+  if [[ "${DRY_RUN}" != "1" ]]; then
+    echo "===== Group ${group_index} waiting for remaining ${jobs_in_group} job(s) to finish ====="
+    wait
+    echo "===== Group ${group_index} finished ====="
+  else
+    echo "===== Group ${group_index} dry-run finished (${jobs_in_group} job(s)) ====="
+  fi
+fi
+
+if (( selected_count == 0 )); then
+  echo "No runs selected in [${START_INPUT}, ${END_INPUT}] from ${CONFIG_FILE}" >&2
+  exit 1
+fi
+
+echo "Done. Selected runs: ${selected_count}, range=[${START_INPUT}, ${END_INPUT}]"
