@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 实验五：复杂攻击场景（8个恶意参与方，TLF/SF/IPM/DBA 各2个）
 #
-# 21次执行 = 7种聚合方案 × 3种数据集（CIFAR10/PATHMNIST/MNIST）
+# 24次执行 = 8种聚合方案 × 3种数据集（CIFAR10/PATHMNIST/MNIST）
 # 默认读取 scripts/config/exp_05_complex_attack/runs.csv
 #
 # 用法：
@@ -22,6 +22,17 @@ MAX_PARALLEL=${MAX_PARALLEL:-3}
 DRY_RUN=${DRY_RUN:-0}
 PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 DBA_POISONING_PER_BATCH=${DBA_POISONING_PER_BATCH:-60}
+FRFL_VALIDATION_RATIO=${FRFL_VALIDATION_RATIO:-0.2}
+FRFL_NUM_VALIDATORS=${FRFL_NUM_VALIDATORS:-null}
+FRFL_XI1=${FRFL_XI1:-1.0}
+FRFL_XI2=${FRFL_XI2:-1.0}
+FRFL_XI_MIN=${FRFL_XI_MIN:-0.05}
+FRFL_XI_MAX=${FRFL_XI_MAX:-5.0}
+FRFL_MEAN_MEDIAN_TOL=${FRFL_MEAN_MEDIAN_TOL:-1e-8}
+FRFL_ADAPT_CLIP=${FRFL_ADAPT_CLIP:-0.25}
+FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION=${FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION:-true}
+FRFL_COMMITTEE_ELECTION=${FRFL_COMMITTEE_ELECTION:-random}
+COMMITTEE_ELECTION=${COMMITTEE_ELECTION:-reputation}
 export PYTORCH_CUDA_ALLOC_CONF
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
@@ -47,7 +58,7 @@ normalize_run_id() {
 }
 
 START_INPUT=${1:-run_373}
-END_INPUT=${2:-run_393}
+END_INPUT=${2:-run_444}
 START_ID=$(normalize_run_id "${START_INPUT}")
 END_ID=$(normalize_run_id "${END_INPUT}")
 
@@ -97,7 +108,6 @@ start_run() {
     --dirichlet_alpha=0.9
     --eta=0.1
     --fedcsap_bottom_q=0.2
-    --committee_election=reputation
     --seed=0
     --complex_attack_mode=mixed_8_tlf_sf_ipm_dba
     --"${run_tag}"
@@ -107,6 +117,25 @@ start_run() {
 
   if [[ "${aggregation_method}" == "flshield" ]]; then
     cmd+=(--bijective_flshield)
+  fi
+
+  if [[ "${aggregation_method}" != "frfl" ]]; then
+    cmd+=(--committee_election="${COMMITTEE_ELECTION}")
+  fi
+
+  if [[ "${aggregation_method}" == "frfl" ]]; then
+    cmd+=(
+      --committee_election="${FRFL_COMMITTEE_ELECTION}"
+      --frfl_validation_ratio="${FRFL_VALIDATION_RATIO}"
+      --frfl_num_validators="${FRFL_NUM_VALIDATORS}"
+      --frfl_xi1="${FRFL_XI1}"
+      --frfl_xi2="${FRFL_XI2}"
+      --frfl_xi_min="${FRFL_XI_MIN}"
+      --frfl_xi_max="${FRFL_XI_MAX}"
+      --frfl_mean_median_tol="${FRFL_MEAN_MEDIAN_TOL}"
+      --frfl_adapt_clip="${FRFL_ADAPT_CLIP}"
+      --frfl_exclude_malicious_from_validation="${FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION}"
+    )
   fi
 
   if [[ "${DRY_RUN}" == "1" ]]; then
