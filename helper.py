@@ -31,6 +31,7 @@ from flshield_utils.cluster_grads import cluster_grads as cluster_function
 from flshield_utils.validation_test import validation_test
 from flshield_utils.impute_validation import impute_validation
 from fedcsap_utils.aggregation import run_fedcsap
+from frfl_utils.aggregation import run_frfl
 
 from torch.utils.data import SubsetRandomSampler
 from torch.utils.data import ConcatDataset, DataLoader, Subset
@@ -170,6 +171,9 @@ class Helper:
             self.good_count = [0 for _ in range(self.params['number_of_total_participants'])]
             self.bad_count = [0 for _ in range(self.params['number_of_total_participants'])]
             self.prob_good_model = [0. for _ in range(self.params['number_of_total_participants'])]
+
+        if self.params['aggregation_methods'] == config.AGGR_FRFL:
+            self.ensure_frfl_state()
 
         self.current_committee = []
         self.public_validation_pool = None
@@ -483,7 +487,7 @@ class Helper:
                  number of training samples corresponding to the update, and update
                  is a list of variable weights
          """
-        if self.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_FEDCSAP, config.AGGR_AFA, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_MEDIAN, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
+        if self.params['aggregation_methods'] in [config.AGGR_FLAME, config.AGGR_FLTRUST, config.AGGR_FLSHIELD, config.AGGR_FEDCSAP, config.AGGR_AFA, config.AGGR_FRFL, config.AGGR_MEAN, config.AGGR_FEDAVG, config.AGGR_MEDIAN, config.AGGR_KRUM, config.AGGR_FOOLSGOLD]:
             updates = dict()
             for i in range(0, len(state_keys)):
                 local_model_gradients = epochs_submit_update_dict[state_keys[i]][0][0] # agg 1 interval
@@ -695,6 +699,83 @@ class Helper:
                 
         return updates
 
+
+
+    def ensure_frfl_state(self):
+        if not hasattr(self, 'frfl_current_validators'):
+            self.frfl_current_validators = []
+        if not hasattr(self, 'frfl_seen_validators'):
+            self.frfl_seen_validators = set()
+        if not hasattr(self, 'frfl_blocked_from_validation'):
+            self.frfl_blocked_from_validation = set()
+        if not hasattr(self, 'frfl_prev_mean_score'):
+            self.frfl_prev_mean_score = None
+        if not hasattr(self, 'frfl_xi1') or self.frfl_xi1 is None:
+            self.frfl_xi1 = float(self.params.get('frfl_xi1', 1.0))
+        if not hasattr(self, 'frfl_xi2') or self.frfl_xi2 is None:
+            self.frfl_xi2 = float(self.params.get('frfl_xi2', 1.0))
+
+    def frfl_assign_roles(self, epoch, candidate_pool):
+        self.ensure_frfl_state()
+        if len(candidate_pool) == 0:
+            return [], []
+
+        validation_ratio = self.params.get('frfl_validation_ratio', 0.2)
+        target_v = self.params.get('frfl_num_validators')
+        if target_v is None:
+            target_v = int(round(len(candidate_pool) * float(validation_ratio)))
+        target_v = max(1, min(int(target_v), len(candidate_pool) - 1 if len(candidate_pool) > 1 else 1))
+
+        rng = random.Random(seed_from(self.params['seed'], 'frfl_validation_rotation', epoch))
+        candidate_set = set(candidate_pool)
+        current = [v for v in self.frfl_current_validators if v in candidate_set]
+
+        blocked = set(self.frfl_blocked_from_validation)
+        active_blocked = blocked.intersection(candidate_set)
+
+        if len(current) < target_v:
+            candidate_plus = [n for n in candidate_pool if n not in current and n not in self.frfl_seen_validators and n not in active_blocked]
+            refill = [n for n in candidate_pool if n not in current and n not in active_blocked]
+            while len(current) < target_v and (candidate_plus or refill):
+                source = candidate_plus if len(candidate_plus) > 0 else refill
+                chosen = source.pop(rng.randrange(len(source)))
+                current.append(chosen)
+                if chosen in refill:
+                    refill.remove(chosen)
+                if chosen in candidate_plus:
+                    candidate_plus.remove(chosen)
+
+        if len(current) == 0:
+            init_pool = [n for n in candidate_pool if n not in active_blocked]
+            if len(init_pool) == 0:
+                init_pool = list(candidate_pool)
+            current = rng.sample(init_pool, min(target_v, len(init_pool)))
+
+        if len(current) > target_v:
+            current = rng.sample(current, target_v)
+
+        all_seen = set(self.frfl_seen_validators).union(set(current)).intersection(candidate_set)
+        if len(all_seen) >= max(1, len(candidate_set) - target_v):
+            self.frfl_seen_validators = set()
+
+        if len(current) > 0:
+            i_minus = rng.choice(current)
+            pool_plus = [n for n in candidate_pool if n not in current and n not in self.frfl_seen_validators and n not in active_blocked]
+            if len(pool_plus) == 0:
+                pool_plus = [n for n in candidate_pool if n not in current and n not in active_blocked]
+            if len(pool_plus) > 0 and len(current) >= target_v:
+                i_plus = rng.choice(pool_plus)
+                current = [i_plus if n == i_minus else n for n in current]
+
+        validator_names = [n for n in candidate_pool if n in set(current)]
+        self.frfl_current_validators = validator_names
+        self.frfl_seen_validators.update(validator_names)
+
+        trainer_names = [p for p in candidate_pool if p not in set(validator_names)]
+        return trainer_names, validator_names
+
+    def frfl(self, target_model, updates, epoch, validator_names=None, committee_members=None):
+        return run_frfl(self, target_model, updates, epoch, validator_names=validator_names, committee_members=committee_members)
 
     def flshield(self, target_model, updates, epoch, weight_accumulator, committee_members=None):
         start_epoch = self.start_epoch

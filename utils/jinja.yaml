@@ -55,7 +55,7 @@ committee_validation_sample_ratio: {{ committee_validation_sample_ratio|default(
 
 committee_election: {{ committee_election|default('reputation') }}
 
-# aggregation_methods Allowed values are: [ 'mean', 'fedavg', 'geom_median', 'median', 'krum', 'flame', 'flshield', 'fedcsap', 'fltrust', 'afa', 'foolsgold']
+# aggregation_methods Allowed values are: [ 'mean', 'fedavg', 'geom_median', 'median', 'krum', 'flame', 'flshield', 'fedcsap', 'fltrust', 'afa', 'foolsgold', 'frfl']
 aggregation_methods: {{ get_aggregation_methods(aggregation_methods) }}
 
 {% if get_aggregation_methods(aggregation_methods) == 'mean' %}
@@ -91,6 +91,22 @@ validation_metric_options:
   - accuracy
 validation_metric: {{ validation_metric|default('LIPC') }}
 no_ensemble: false
+{% endif %}
+
+{% if get_aggregation_methods(aggregation_methods) == 'frfl' %}
+frfl_validation_ratio: {{ frfl_validation_ratio|default(0.2) }}
+frfl_num_validators: {{ frfl_num_validators|default('null') }}
+frfl_xi1: {{ frfl_xi1|default(1.0) }}
+frfl_xi2: {{ frfl_xi2|default(1.0) }}
+frfl_xi_min: {{ frfl_xi_min|default(0.05) }}
+frfl_xi_max: {{ frfl_xi_max|default(5.0) }}
+frfl_mean_median_tol: {{ frfl_mean_median_tol|default(1e-8) }}
+frfl_adapt_clip: {{ frfl_adapt_clip|default(0.25) }}
+frfl_exclude_malicious_from_validation: {{ frfl_exclude_malicious_from_validation|default('true') }}
+validation_metric_options:
+  - accuracy
+validation_metric: {{ validation_metric|default('accuracy') }}
+committee_election: {{ committee_election|default('random') }}
 {% endif %}
 
 
