@@ -55,7 +55,7 @@ committee_validation_sample_ratio: {{ committee_validation_sample_ratio|default(
 
 committee_election: {{ committee_election|default('reputation') }}
 
-# aggregation_methods Allowed values are: [ 'mean', 'fedavg', 'geom_median', 'median', 'krum', 'flame', 'flshield', 'fedcsap', 'fltrust', 'afa', 'foolsgold', 'frfl']
+# aggregation_methods Allowed values are: [ 'mean', 'fedavg', 'geom_median', 'median', 'krum', 'flame', 'flshield', 'fedcsap', 'fltrust', 'afa', 'foolsgold', 'frfl', 'cbrfl']
 aggregation_methods: {{ get_aggregation_methods(aggregation_methods) }}
 
 {% if get_aggregation_methods(aggregation_methods) == 'mean' %}
@@ -116,6 +116,32 @@ fedcsap_committee_takeover_attack: {{ fedcsap_committee_takeover_attack|default(
 validation_metric_options:
   - f1
 validation_metric: {{ validation_metric|default('f1') }}
+{% endif %}
+
+{% if get_aggregation_methods(aggregation_methods) == 'cbrfl' %}
+validation_metric_options:
+  - loss
+validation_metric: {{ validation_metric|default('loss') }}
+
+cbrfl_shared_val_ratio: {{ cbrfl_shared_val_ratio|default(0.03) }}
+cbrfl_delta: {{ cbrfl_delta|default(0.0) }}
+cbrfl_beta: {{ cbrfl_beta|default(0.5) }}
+cbrfl_lambda: {{ cbrfl_lambda|default(0.5) }}
+
+# Gompertz parameters
+cbrfl_gompertz_a: {{ cbrfl_gompertz_a|default(1.0) }}
+cbrfl_gompertz_b: {{ cbrfl_gompertz_b|default(1.0) }}
+cbrfl_gompertz_c: {{ cbrfl_gompertz_c|default(1.0) }}
+
+# adaptive global learning rate
+cbrfl_global_lr_init: {{ cbrfl_global_lr_init|default(1.0) }}
+cbrfl_global_lr_min: {{ cbrfl_global_lr_min|default(1e-4) }}
+cbrfl_global_lr_max: {{ cbrfl_global_lr_max|default(5.0) }}
+cbrfl_global_lr_dot_clip: {{ cbrfl_global_lr_dot_clip|default(0.1) }}
+
+# committee election
+cbrfl_idle_multiplier: {{ cbrfl_idle_multiplier|default(3) }}
+committee_election: {{ committee_election|default('reputation') }}
 {% endif %}
 
 

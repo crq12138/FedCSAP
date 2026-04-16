@@ -32,6 +32,7 @@ from flshield_utils.validation_test import validation_test
 from flshield_utils.impute_validation import impute_validation
 from fedcsap_utils.aggregation import run_fedcsap
 from frfl_utils.aggregation import run_frfl
+from cbrfl_utils.aggregation import run_cbrfl
 
 from torch.utils.data import SubsetRandomSampler
 from torch.utils.data import ConcatDataset, DataLoader, Subset
@@ -174,6 +175,8 @@ class Helper:
 
         if self.params['aggregation_methods'] == config.AGGR_FRFL:
             self.ensure_frfl_state()
+        if self.params['aggregation_methods'] == config.AGGR_CBRFL:
+            self.ensure_cbrfl_state()
 
         self.current_committee = []
         self.public_validation_pool = None
@@ -220,6 +223,9 @@ class Helper:
         return hasher.hexdigest()
 
     def elect_committee(self, epoch):
+        if self.params['aggregation_methods'] == config.AGGR_CBRFL:
+            return self.elect_committee_cbrfl(epoch)
+
         committee_size = self.params['committee_size']
         if committee_size is None:
             committee_size = self.params['no_models']
@@ -273,6 +279,142 @@ class Helper:
             f"{[(p, round(self.get_participant_reputation(p), 4)) for p in self.current_committee]}"
         )
         return self.current_committee
+
+    def ensure_cbrfl_state(self):
+        if not hasattr(self, 'cbrfl_train_reputation'):
+            self.cbrfl_train_reputation = defaultdict(lambda: 1.0)
+        if not hasattr(self, 'cbrfl_val_reputation'):
+            self.cbrfl_val_reputation = defaultdict(lambda: 1.0)
+        if not hasattr(self, 'cbrfl_prev_ag_clients'):
+            self.cbrfl_prev_ag_clients = []
+        if not hasattr(self, 'cbrfl_prev_training_clients'):
+            self.cbrfl_prev_training_clients = []
+        if not hasattr(self, 'cbrfl_prev_committee'):
+            self.cbrfl_prev_committee = []
+        if not hasattr(self, 'cbrfl_shared_val_dataset'):
+            self.cbrfl_shared_val_dataset = None
+        if not hasattr(self, 'cbrfl_shared_val_loader'):
+            self.cbrfl_shared_val_loader = None
+        if not hasattr(self, 'cbrfl_momentum'):
+            self.cbrfl_momentum = None
+        if not hasattr(self, 'cbrfl_prev_momentum'):
+            self.cbrfl_prev_momentum = None
+        if not hasattr(self, 'cbrfl_global_lr'):
+            self.cbrfl_global_lr = None
+
+    def _cbrfl_weighted_sample_without_replacement(self, items, weight_map, k, rng):
+        items = list(items)
+        k = max(0, min(int(k), len(items)))
+        if k == 0:
+            return []
+        selected = []
+        pool = list(items)
+        while len(selected) < k and len(pool) > 0:
+            weights = np.array([max(float(weight_map.get(p, 0.0)), 0.0) for p in pool], dtype=np.float64)
+            if float(np.sum(weights)) <= 0:
+                idx = rng.randrange(len(pool))
+            else:
+                probs = weights / np.sum(weights)
+                idx = int(np.random.default_rng(rng.randrange(1 << 30)).choice(len(pool), p=probs))
+            selected.append(pool.pop(idx))
+        return selected
+
+    def elect_committee_cbrfl(self, epoch):
+        self.ensure_cbrfl_state()
+        cm = self.params['committee_size']
+        if cm is None:
+            cm = self.params['no_models']
+        cm = max(0, min(int(cm), len(self.participants_list)))
+        if cm == 0:
+            self.current_committee = []
+            return self.current_committee
+
+        rng = random.Random(seed_from(self.params['seed'], 'cbrfl_committee_election', epoch))
+        if len(self.cbrfl_prev_ag_clients) == 0:
+            self.current_committee = rng.sample(self.participants_list, cm)
+            return self.current_committee
+
+        pre_k = cm // 2
+        prev_ag = [p for p in self.cbrfl_prev_ag_clients if p in self.participants_list]
+        train_rep_map = {p: float(self.cbrfl_train_reputation[p]) for p in prev_ag}
+        selected_pre = self._cbrfl_weighted_sample_without_replacement(prev_ag, train_rep_map, pre_k, rng)
+
+        selected_pre_set = set(selected_pre)
+        candidate_pool = [p for p in prev_ag if p not in selected_pre_set]
+
+        idle_multiplier = self.params.get('cbrfl_idle_multiplier', 3)
+        idle_multiplier = 3 if idle_multiplier is None else int(idle_multiplier)
+        idle_candidates = [p for p in self.participants_list if p not in set(self.cbrfl_prev_training_clients)]
+        rng.shuffle(idle_candidates)
+        if idle_multiplier > 0 and len(idle_candidates) > 0:
+            candidate_pool.extend(idle_candidates[:max(0, cm * idle_multiplier)])
+
+        candidate_pool = [p for p in candidate_pool if p not in selected_pre_set]
+        if len(candidate_pool) < (cm - len(selected_pre)):
+            leftovers = [p for p in self.participants_list if p not in selected_pre_set and p not in set(candidate_pool)]
+            leftovers = sorted(
+                leftovers,
+                key=lambda x: max(float(self.cbrfl_train_reputation[x]), float(self.cbrfl_val_reputation[x])),
+                reverse=True,
+            )
+            need = (cm - len(selected_pre)) - len(candidate_pool)
+            candidate_pool.extend(leftovers[:need])
+
+        val_rep_map = {p: float(self.cbrfl_val_reputation[p]) for p in candidate_pool}
+        selected_re = self._cbrfl_weighted_sample_without_replacement(candidate_pool, val_rep_map, cm - len(selected_pre), rng)
+
+        final_committee = selected_pre + selected_re
+        if len(final_committee) < cm:
+            remaining = [p for p in self.participants_list if p not in set(final_committee)]
+            final_committee.extend(remaining[:(cm - len(final_committee))])
+        self.current_committee = final_committee[:cm]
+        logger.info('CBRFL committee election at epoch %s: %s', epoch, self.current_committee)
+        return self.current_committee
+
+    def prepare_cbrfl_shared_validation(self):
+        self.ensure_cbrfl_state()
+        if self.cbrfl_shared_val_dataset is not None:
+            return self.cbrfl_shared_val_loader
+
+        shared_ratio = self.params.get('cbrfl_shared_val_ratio', 0.03)
+        if shared_ratio is None:
+            shared_ratio = 0.03
+        shared_ratio = float(shared_ratio)
+        shared_ratio = max(0.0, min(shared_ratio, 1.0))
+        if shared_ratio <= 0.0:
+            self.cbrfl_shared_val_dataset = None
+            self.cbrfl_shared_val_loader = None
+            return None
+
+        base_dataset = None
+        if hasattr(self, 'test_data') and self.test_data is not None:
+            base_dataset = self.test_data.dataset if hasattr(self.test_data, 'dataset') else self.test_data
+        elif hasattr(self, 'test_dataset') and self.test_dataset is not None:
+            base_dataset = self.test_dataset
+
+        if base_dataset is None:
+            self.cbrfl_shared_val_dataset = None
+            self.cbrfl_shared_val_loader = None
+            return None
+
+        total = len(base_dataset)
+        if total <= 0:
+            self.cbrfl_shared_val_dataset = None
+            self.cbrfl_shared_val_loader = None
+            return None
+
+        sample_size = max(1, int(total * shared_ratio))
+        sample_size = min(sample_size, total)
+        rng = random.Random(seed_from(self.params['seed'], 'cbrfl_shared_validation'))
+        indices = rng.sample(range(total), sample_size)
+        self.cbrfl_shared_val_dataset = Subset(base_dataset, indices)
+        self.cbrfl_shared_val_loader = DataLoader(
+            self.cbrfl_shared_val_dataset,
+            batch_size=self.params['test_batch_size'],
+            shuffle=False,
+        )
+        logger.info('CBRFL shared validation prepared: %s/%s samples.', sample_size, total)
+        return self.cbrfl_shared_val_loader
 
     def sample_public_validation_loader(self, epoch):
         if self.public_validation_pool is None:
@@ -776,6 +918,9 @@ class Helper:
 
     def frfl(self, target_model, updates, epoch, validator_names=None, committee_members=None):
         return run_frfl(self, target_model, updates, epoch, validator_names=validator_names, committee_members=committee_members)
+
+    def cbrfl(self, target_model, updates, epoch, committee_members=None):
+        return run_cbrfl(self, target_model, updates, epoch, committee_members=committee_members)
 
     def flshield(self, target_model, updates, epoch, weight_accumulator, committee_members=None):
         start_epoch = self.start_epoch
