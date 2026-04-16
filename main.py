@@ -201,6 +201,8 @@ def run(params_loaded):
 
     
     logger.info(f'load data done')
+    if params_loaded['aggregation_methods'] == config.AGGR_CBRFL:
+        helper.prepare_cbrfl_shared_validation()
     helper.create_model()
     logger.info(f'create model done')
     ### Create models
@@ -317,7 +319,7 @@ def run(params_loaded):
         weight_accumulator, updates = helper.accumulate_weight(weight_accumulator, epochs_submit_update_dict,
                                                                agent_name_keys, num_samples_dict)
         logger.info(f'received {len(updates)} updates')
-        if helper.params['aggregation_methods'] != config.AGGR_FRFL:
+        if helper.params['aggregation_methods'] not in [config.AGGR_FRFL, config.AGGR_CBRFL]:
             helper.sample_public_validation_loader(epoch)
 
         if helper.params['attack_methods'] == config.ATTACK_IPM:
@@ -332,6 +334,7 @@ def run(params_loaded):
                 config.AGGR_FEDCSAP,
                 config.AGGR_AFA,
                 config.AGGR_FRFL,
+                config.AGGR_CBRFL,
                 config.AGGR_MEAN,
                 config.AGGR_FEDAVG,
                 config.AGGR_MEDIAN,
@@ -379,6 +382,8 @@ def run(params_loaded):
                 validator_names=validator_name_keys,
                 committee_members=committee_members,
             )
+        elif helper.params['aggregation_methods'] == config.AGGR_CBRFL:
+            helper.cbrfl(helper.target_model, updates, epoch, committee_members=committee_members)
         elif helper.params['aggregation_methods'] == config.AGGR_FLTRUST:
             is_updated, names, weights = helper.fltrust(helper.target_model, updates, epoch)
         elif helper.params['aggregation_methods'] in [config.AGGR_MEAN, config.AGGR_FEDAVG]:
