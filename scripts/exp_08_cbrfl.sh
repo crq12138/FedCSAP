@@ -17,6 +17,9 @@ set -euo pipefail
 #   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 #   POISONING_PER_BATCH=60
 #   COMMITTEE_ELECTION=random
+#   NUMBER_OF_TOTAL_PARTICIPANTS=25
+#   COMMITTEE_SIZE=10
+#   NO_MODELS=15
 
 CONFIG_FILE=${CONFIG_FILE:-scripts/configs/exp_08_cbrfl_runs.csv}
 MAX_PARALLEL=${MAX_PARALLEL:-3}
@@ -24,6 +27,9 @@ DRY_RUN=${DRY_RUN:-0}
 PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 POISONING_PER_BATCH=${POISONING_PER_BATCH:-60}
 COMMITTEE_ELECTION=${COMMITTEE_ELECTION:-random}
+NUMBER_OF_TOTAL_PARTICIPANTS=${NUMBER_OF_TOTAL_PARTICIPANTS:-25}
+COMMITTEE_SIZE=${COMMITTEE_SIZE:-10}
+NO_MODELS=${NO_MODELS:-15}
 export PYTORCH_CUDA_ALLOC_CONF
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
@@ -38,6 +44,26 @@ fi
 
 if ! [[ "${POISONING_PER_BATCH}" =~ ^[1-9][0-9]*$ ]]; then
   echo "POISONING_PER_BATCH must be a positive integer, got: ${POISONING_PER_BATCH}" >&2
+  exit 1
+fi
+
+if ! [[ "${NUMBER_OF_TOTAL_PARTICIPANTS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NUMBER_OF_TOTAL_PARTICIPANTS must be a positive integer, got: ${NUMBER_OF_TOTAL_PARTICIPANTS}" >&2
+  exit 1
+fi
+
+if ! [[ "${COMMITTEE_SIZE}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "COMMITTEE_SIZE must be a positive integer, got: ${COMMITTEE_SIZE}" >&2
+  exit 1
+fi
+
+if ! [[ "${NO_MODELS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NO_MODELS must be a positive integer, got: ${NO_MODELS}" >&2
+  exit 1
+fi
+
+if (( COMMITTEE_SIZE + NO_MODELS != NUMBER_OF_TOTAL_PARTICIPANTS )); then
+  echo "COMMITTEE_SIZE + NO_MODELS must equal NUMBER_OF_TOTAL_PARTICIPANTS. Got ${COMMITTEE_SIZE} + ${NO_MODELS} != ${NUMBER_OF_TOTAL_PARTICIPANTS}" >&2
   exit 1
 fi
 
@@ -126,9 +152,9 @@ start_run() {
     --poisoning_per_batch="${POISONING_PER_BATCH}"
     --resumed_model=false
     --epochs="${epochs}"
-    --number_of_total_participants=25
-    --committee_size=5
-    --no_models=20
+    --number_of_total_participants="${NUMBER_OF_TOTAL_PARTICIPANTS}"
+    --committee_size="${COMMITTEE_SIZE}"
+    --no_models="${NO_MODELS}"
     --noniid=sampling_dirichlet
     --dirichlet_alpha=0.9
     --eta=0.1
