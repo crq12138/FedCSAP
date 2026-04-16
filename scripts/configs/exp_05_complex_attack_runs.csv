@@ -23,3 +23,6 @@ run_393,mnist,fedcsap
 run_442,cifar,frfl
 run_443,pathmnist,frfl
 run_444,mnist,frfl
+run_481,cifar,cbrfl
+run_482,pathmnist,cbrfl
+run_483,mnist,cbrfl
