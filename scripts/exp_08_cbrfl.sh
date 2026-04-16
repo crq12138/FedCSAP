@@ -1,41 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 实验五：复杂攻击场景（8个恶意参与方，TLF/SF/IPM/DBA 各2个）
+# 实验八：CBRFL 对比实验（MNIST/PATHMNIST/CIFAR10 × TLF/SF/IPM/DBA × 强度2/5/8）
 #
-# 24次执行 = 8种聚合方案 × 3种数据集（CIFAR10/PATHMNIST/MNIST）
-# 默认读取 scripts/config/exp_05_complex_attack/runs.csv
+# 36次执行 = 3种数据集 × 4种攻击 × 3种攻击强度
+# 默认读取 scripts/configs/exp_08_cbrfl_runs.csv
 #
 # 用法：
-#   bash scripts/exp_05_complex_attack.sh
-#   bash scripts/exp_05_complex_attack.sh run_380 run_386
-#   bash scripts/exp_05_complex_attack.sh run_481 run_483
+#   bash scripts/exp_08_cbrfl.sh
+#   bash scripts/exp_08_cbrfl.sh run_445 run_480
 #
 # 可选环境变量：
-#   CONFIG_FILE=scripts/config/exp_05_complex_attack/runs.csv
+#   CONFIG_FILE=scripts/configs/exp_08_cbrfl_runs.csv
 #   MAX_PARALLEL=3
 #   DRY_RUN=1
 #   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-#   DBA_POISONING_PER_BATCH=60
-#   CBRFL_COMMITTEE_ELECTION=random
+#   POISONING_PER_BATCH=60
+#   COMMITTEE_ELECTION=random
 
-CONFIG_FILE=${CONFIG_FILE:-scripts/configs/exp_05_complex_attack_runs.csv}
+CONFIG_FILE=${CONFIG_FILE:-scripts/configs/exp_08_cbrfl_runs.csv}
 MAX_PARALLEL=${MAX_PARALLEL:-3}
 DRY_RUN=${DRY_RUN:-0}
 PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
-DBA_POISONING_PER_BATCH=${DBA_POISONING_PER_BATCH:-60}
-FRFL_VALIDATION_RATIO=${FRFL_VALIDATION_RATIO:-0.2}
-FRFL_NUM_VALIDATORS=${FRFL_NUM_VALIDATORS:-null}
-FRFL_XI1=${FRFL_XI1:-1.0}
-FRFL_XI2=${FRFL_XI2:-1.0}
-FRFL_XI_MIN=${FRFL_XI_MIN:-0.05}
-FRFL_XI_MAX=${FRFL_XI_MAX:-5.0}
-FRFL_MEAN_MEDIAN_TOL=${FRFL_MEAN_MEDIAN_TOL:-1e-8}
-FRFL_ADAPT_CLIP=${FRFL_ADAPT_CLIP:-0.25}
-FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION=${FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION:-true}
-FRFL_COMMITTEE_ELECTION=${FRFL_COMMITTEE_ELECTION:-random}
-CBRFL_COMMITTEE_ELECTION=${CBRFL_COMMITTEE_ELECTION:-random}
-COMMITTEE_ELECTION=${COMMITTEE_ELECTION:-reputation}
+POISONING_PER_BATCH=${POISONING_PER_BATCH:-60}
+COMMITTEE_ELECTION=${COMMITTEE_ELECTION:-random}
 export PYTORCH_CUDA_ALLOC_CONF
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
@@ -48,6 +36,11 @@ if ! [[ "${MAX_PARALLEL}" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
+if ! [[ "${POISONING_PER_BATCH}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "POISONING_PER_BATCH must be a positive integer, got: ${POISONING_PER_BATCH}" >&2
+  exit 1
+fi
+
 normalize_run_id() {
   local input="$1"
   if [[ "${input}" =~ ^run_([0-9]+)$ ]]; then
@@ -55,13 +48,13 @@ normalize_run_id() {
   elif [[ "${input}" =~ ^([0-9]+)$ ]]; then
     echo $((10#${BASH_REMATCH[1]}))
   else
-    echo "Invalid run id: ${input}. Use 373 or run_373 format." >&2
+    echo "Invalid run id: ${input}. Use 445 or run_445 format." >&2
     exit 1
   fi
 }
 
-START_INPUT=${1:-run_373}
-END_INPUT=${2:-run_483}
+START_INPUT=${1:-run_445}
+END_INPUT=${2:-run_480}
 START_ID=$(normalize_run_id "${START_INPUT}")
 END_ID=$(normalize_run_id "${END_INPUT}")
 
@@ -72,11 +65,36 @@ fi
 
 epochs_for_dataset() {
   case "$1" in
-    cifar) echo 200 ;;
-    pathmnist) echo 150 ;;
     mnist) echo 100 ;;
+    pathmnist) echo 150 ;;
+    cifar) echo 200 ;;
     *)
       echo "Unsupported dataset type: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+attack_method_from_code() {
+  case "$1" in
+    TLF) echo targeted_label_flip ;;
+    SF) echo sf ;;
+    IPM) echo inner_product_manipulation ;;
+    DBA) echo dba ;;
+    *)
+      echo "Unsupported attack code: $1. Allowed: TLF/SF/IPM/DBA" >&2
+      exit 1
+      ;;
+  esac
+}
+
+mal_pcnt_for_strength() {
+  case "$1" in
+    2) echo 0.1 ;;
+    5) echo 0.2 ;;
+    8) echo 0.3 ;;
+    *)
+      echo "Unsupported attack_strength: $1. Allowed: 2/5/8" >&2
       exit 1
       ;;
   esac
@@ -85,7 +103,16 @@ epochs_for_dataset() {
 start_run() {
   local run_tag="$1"
   local type="$2"
-  local aggregation_method="$3"
+  local attack_code="$3"
+  local attack_strength="$4"
+  local aggregation_method="$5"
+
+  local attack_method
+  attack_method=$(attack_method_from_code "${attack_code}")
+
+  local mal_pcnt
+  mal_pcnt=$(mal_pcnt_for_strength "${attack_strength}")
+
   local epochs
   epochs=$(epochs_for_dataset "${type}")
 
@@ -93,15 +120,10 @@ start_run() {
     python main.py
     --type="${type}"
     --aggregation_methods="${aggregation_method}"
-    --attack_methods=mixed_8_tlf_sf_ipm_dba
-    --number_of_adversary_mixed_8_tlf_sf_ipm_dba=8
-    --number_of_adversary_targeted_label_flip=2
-    --number_of_adversary_sf=2
-    --number_of_adversary_inner_product_manipulation=2
-    --number_of_adversary_dba=2
-    --tlf_label=medium
-    --mal_pcnt=0.32
-    --poisoning_per_batch="${DBA_POISONING_PER_BATCH}"
+    --attack_methods="${attack_method}"
+    --"number_of_adversary_${attack_method}"="${attack_strength}"
+    --mal_pcnt="${mal_pcnt}"
+    --poisoning_per_batch="${POISONING_PER_BATCH}"
     --resumed_model=false
     --epochs="${epochs}"
     --number_of_total_participants=25
@@ -110,39 +132,13 @@ start_run() {
     --noniid=sampling_dirichlet
     --dirichlet_alpha=0.9
     --eta=0.1
-    --fedcsap_bottom_q=0.2
+    --committee_election="${COMMITTEE_ELECTION}"
     --seed=0
-    --complex_attack_mode=mixed_8_tlf_sf_ipm_dba
     --"${run_tag}"
-    # --resumed_model=true 
-    # --resumed_model_name=utils/model_bank/cifar/model_last.pt.tar.epoch_100
   )
 
   if [[ "${aggregation_method}" == "flshield" ]]; then
     cmd+=(--bijective_flshield)
-  fi
-
-  if [[ "${aggregation_method}" != "frfl" && "${aggregation_method}" != "cbrfl" ]]; then
-    cmd+=(--committee_election="${COMMITTEE_ELECTION}")
-  fi
-
-  if [[ "${aggregation_method}" == "cbrfl" ]]; then
-    cmd+=(--committee_election="${CBRFL_COMMITTEE_ELECTION}")
-  fi
-
-  if [[ "${aggregation_method}" == "frfl" ]]; then
-    cmd+=(
-      --committee_election="${FRFL_COMMITTEE_ELECTION}"
-      --frfl_validation_ratio="${FRFL_VALIDATION_RATIO}"
-      --frfl_num_validators="${FRFL_NUM_VALIDATORS}"
-      --frfl_xi1="${FRFL_XI1}"
-      --frfl_xi2="${FRFL_XI2}"
-      --frfl_xi_min="${FRFL_XI_MIN}"
-      --frfl_xi_max="${FRFL_XI_MAX}"
-      --frfl_mean_median_tol="${FRFL_MEAN_MEDIAN_TOL}"
-      --frfl_adapt_clip="${FRFL_ADAPT_CLIP}"
-      --frfl_exclude_malicious_from_validation="${FRFL_EXCLUDE_MALICIOUS_FROM_VALIDATION}"
-    )
   fi
 
   if [[ "${DRY_RUN}" == "1" ]]; then
@@ -152,14 +148,14 @@ start_run() {
   fi
 
   nohup "${cmd[@]}" > /dev/null 2>&1 &
-  echo "Started ${run_tag}: type=${type}, aggregation=${aggregation_method}, mixed_adv={TLF:2,SF:2,IPM:2,DBA:2}, pid=$!"
+  echo "Started ${run_tag}: type=${type}, attack=${attack_code}, attack_method=${attack_method}, strength=${attack_strength}, mal_pcnt=${mal_pcnt}, aggregation=${aggregation_method}, pid=$!"
 }
 
 group_index=1
 jobs_in_group=0
 selected_count=0
 
-while IFS=, read -r run_tag type aggregation_method; do
+while IFS=, read -r run_tag type attack_code attack_strength aggregation_method; do
   if [[ "${run_tag}" == "run_tag" ]]; then
     continue
   fi
@@ -173,7 +169,7 @@ while IFS=, read -r run_tag type aggregation_method; do
     echo "===== Group ${group_index} started (max parallel: ${MAX_PARALLEL}) ====="
   fi
 
-  start_run "${run_tag}" "${type}" "${aggregation_method}"
+  start_run "${run_tag}" "${type}" "${attack_code}" "${attack_strength}" "${aggregation_method}"
   selected_count=$((selected_count + 1))
   jobs_in_group=$((jobs_in_group + 1))
 
