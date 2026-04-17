@@ -166,6 +166,9 @@ poison_momentum: 0.7
 {% else %}
 poison_momentum: 0.9
 {% endif %}
+# Training stabilizers
+train_grad_clip: {{ train_grad_clip|default(10.0) }}
+poison_grad_clip: {{ poison_grad_clip|default(5.0) }}
 results_json: true
 alpha_loss: 1
 {% if get_type(type) == 'loan' %}

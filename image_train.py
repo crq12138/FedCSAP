@@ -34,6 +34,33 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
         attack_map = getattr(helper, 'adversary_attack_map', {})
         return attack_map.get(int(agent_name), "none")
 
+    def resolve_grad_clip(param_name):
+        raw_value = helper.params.get(param_name, None)
+        if raw_value in [None, False, 'false', 'False', 'none', 'None', 0, '0', '0.0']:
+            return None
+        try:
+            clip_value = float(raw_value)
+        except (TypeError, ValueError):
+            main.logger.warning('Invalid %s=%r, disable grad clipping for this branch.', param_name, raw_value)
+            return None
+        return clip_value if clip_value > 0 else None
+
+    def skip_on_non_finite_loss(loss_tensor, model_name, agent_name_key, epoch, internal_epoch, batch_id, is_poisoned):
+        if torch.isfinite(loss_tensor):
+            return False
+        branch = 'poison' if is_poisoned else 'benign'
+        main.logger.warning(
+            'Skip non-finite loss on %s branch: model=%s, agent=%s, epoch=%s, internal_epoch=%s, batch=%s, loss=%s',
+            branch,
+            model_name,
+            agent_name_key,
+            epoch,
+            internal_epoch,
+            batch_id,
+            loss_tensor,
+        )
+        return True
+
     epochs_submit_update_dict = dict()
     num_samples_dict = dict()
     current_number_of_adversaries=0
@@ -99,6 +126,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                 poison_lr = helper.params['poison_lr']
                 internal_epoch_num = helper.params['internal_poison_epochs']
                 step_lr = helper.params['poison_step_lr']
+                poison_grad_clip = resolve_grad_clip('poison_grad_clip')
 
 
                 poison_optimizer = torch.optim.SGD(model.parameters(), lr=poison_lr,
@@ -152,7 +180,11 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                         loss = helper.params['alpha_loss'] * class_loss + \
                             (1 - helper.params['alpha_loss']) * distance_loss
                         # main.logger.info(f'distance_loss: {distance_loss}, class_loss: {class_loss}, loss: {loss}')
+                        if skip_on_non_finite_loss(loss, model.name, agent_name_key, epoch, internal_epoch, batch_id, is_poisoned=True):
+                            continue
                         loss.backward()
+                        if poison_grad_clip is not None:
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), poison_grad_clip)
 
                         # get gradients
                         # if helper.params['aggregation_methods']==config.AGGR_FLAME:
@@ -183,6 +215,11 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                     if step_lr:
                         scheduler.step()
                         main_logger_info(f'Current lr: {scheduler.get_last_lr()}')
+
+                    if dataset_size == 0:
+                        main.logger.warning('No valid poison batches for agent=%s epoch=%s internal_epoch=%s, skip metrics logging.',
+                                            agent_name_key, epoch, internal_epoch)
+                        continue
 
                     acc = 100.0 * (float(correct) / float(dataset_size))
                     total_l = total_loss / dataset_size
@@ -269,6 +306,7 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
 
             else:
                 temp_local_epoch = (epoch - 1) * helper.params['internal_epochs']
+                train_grad_clip = resolve_grad_clip('train_grad_clip')
                 for internal_epoch in range(1, helper.params['internal_epochs'] + 1):
                     temp_local_epoch += 1
 
@@ -288,11 +326,15 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
 
                         optimizer.zero_grad()
                         data, targets = helper.get_batch(data_iterator, batch,evaluation=False)
-
                         dataset_size += len(data)
+
                         output = model(data)
                         loss = nn.functional.cross_entropy(output, targets)
+                        if skip_on_non_finite_loss(loss, model.name, agent_name_key, epoch, internal_epoch, batch_id, is_poisoned=False):
+                            continue
                         loss.backward()
+                        if train_grad_clip is not None:
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), train_grad_clip)
 
                         # get gradients
                         # if helper.params['aggregation_methods'] == config.AGGR_FLAME:
@@ -329,6 +371,11 @@ def ImageTrain(helper, start_epoch, local_model, target_model, is_poison,agent_n
                                                             batch=batch_id,distance_to_global_model= distance_to_global_model,
                                                            eid=helper.params['environment_name'],
                                                            name=str(agent_name_key),is_poisoned=False)
+
+                    if dataset_size == 0:
+                        main.logger.warning('No valid benign batches for agent=%s epoch=%s internal_epoch=%s, skip metrics logging.',
+                                            agent_name_key, epoch, internal_epoch)
+                        continue
 
                     acc = 100.0 * (float(correct) / float(dataset_size))
                     total_l = total_loss / dataset_size

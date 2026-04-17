@@ -30,6 +30,9 @@ COMMITTEE_ELECTION=${COMMITTEE_ELECTION:-random}
 NUMBER_OF_TOTAL_PARTICIPANTS=${NUMBER_OF_TOTAL_PARTICIPANTS:-25}
 COMMITTEE_SIZE=${COMMITTEE_SIZE:-10}
 NO_MODELS=${NO_MODELS:-15}
+TRAIN_GRAD_CLIP=${TRAIN_GRAD_CLIP:-10}
+POISON_GRAD_CLIP=${POISON_GRAD_CLIP:-5}
+SF_SCALE=${SF_SCALE:-0.5}
 export PYTORCH_CUDA_ALLOC_CONF
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
@@ -159,9 +162,15 @@ start_run() {
     --dirichlet_alpha=0.9
     --eta=0.1
     --committee_election="${COMMITTEE_ELECTION}"
+    --train_grad_clip="${TRAIN_GRAD_CLIP}"
+    --poison_grad_clip="${POISON_GRAD_CLIP}"
     --seed=0
     --"${run_tag}"
   )
+
+  if [[ "${attack_method}" == "sf" ]]; then
+    cmd+=(--sf_scale="${SF_SCALE}")
+  fi
 
   if [[ "${aggregation_method}" == "flshield" ]]; then
     cmd+=(--bijective_flshield)
