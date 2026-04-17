@@ -57,18 +57,26 @@ def _apply_update_to_model(helper, base_model, update_dict):
     return model
 
 
-def _flatten_update(helper, update_dict):
-    flat = np.array(helper.flatten_gradient_v2(update_dict), dtype=np.float64)
-    if not np.all(np.isfinite(flat)):
-        flat = np.nan_to_num(flat, nan=0.0, posinf=0.0, neginf=0.0)
+def _flatten_update_tensor(update_dict):
+    flat_tensors = []
+    for layer_name in sorted(update_dict.keys()):
+        layer_tensor = update_dict[layer_name].detach()
+        if not torch.is_floating_point(layer_tensor):
+            layer_tensor = layer_tensor.float()
+        flat_tensors.append(layer_tensor.reshape(-1).to(device=device, dtype=torch.float32))
+
+    if len(flat_tensors) == 0:
+        return torch.zeros(1, device=device, dtype=torch.float32)
+
+    flat = torch.cat(flat_tensors)
+    flat = torch.nan_to_num(flat, nan=0.0, posinf=0.0, neginf=0.0)
     return flat
 
 
-def _gompertz_weight(u_j, a, b, c):
-    # monotonic stable form
-    x = -c * float(u_j)
-    x = np.clip(x, -30.0, 30.0)
-    return float(a * np.exp(-b * np.exp(x)))
+def _gompertz_weight_tensor(u_j, a, b, c):
+    # monotonic stable form (GPU-friendly)
+    x = torch.clamp(-c * u_j, min=-30.0, max=30.0)
+    return a * torch.exp(-b * torch.exp(x))
 
 
 def _weighted_sample_without_replacement(items, weight_map, k, rng):
@@ -122,8 +130,11 @@ def run_cbrfl(helper, target_model, updates, epoch, committee_members=None):
         committee_members = list(names)
 
     # Step 1-3: evaluate marginal utility by committee members.
-    mean_all = helper.weighted_average_oracle([delta_by_name[n] for n in names], torch.ones(len(names), dtype=torch.float32))
-    norm_all = float(np.linalg.norm(_flatten_update(helper, mean_all)))
+    mean_all = helper.weighted_average_oracle(
+        [delta_by_name[n] for n in names],
+        torch.ones(len(names), dtype=torch.float32, device=device),
+    )
+    norm_all = float(torch.linalg.vector_norm(_flatten_update_tensor(mean_all)).item())
 
     utility_by_committee = {cm: {} for cm in committee_members}
     for cm in committee_members:
@@ -141,12 +152,12 @@ def run_cbrfl(helper, target_model, updates, epoch, committee_members=None):
             else:
                 mean_without_j = helper.weighted_average_oracle(
                     [delta_by_name[n] for n in other_names],
-                    torch.ones(len(other_names), dtype=torch.float32),
+                    torch.ones(len(other_names), dtype=torch.float32, device=device),
                 )
             model_minus_j = _apply_update_to_model(helper, target_model, mean_without_j)
             loss_minus_j = _compute_mean_loss(helper, model_minus_j, val_loader)
 
-            norm_j = float(np.linalg.norm(_flatten_update(helper, delta_by_name[j_name])))
+            norm_j = float(torch.linalg.vector_norm(_flatten_update_tensor(delta_by_name[j_name])).item())
             utility = ((loss_minus_j - loss_all) / max(loss_all, 1e-12)) * (norm_all / max(norm_j, 1e-12))
             if not np.isfinite(utility):
                 utility = 0.0
@@ -166,7 +177,11 @@ def run_cbrfl(helper, target_model, updates, epoch, committee_members=None):
     median_utility_dict = {}
     for n in names:
         vals = [utility_by_committee.get(cm, {}).get(n, 0.0) for cm in committee_members]
-        median_utility_dict[n] = float(np.median(np.array(vals, dtype=np.float32))) if len(vals) > 0 else 0.0
+        if len(vals) > 0:
+            vals_tensor = torch.tensor(vals, dtype=torch.float32, device=device)
+            median_utility_dict[n] = float(torch.median(vals_tensor).item())
+        else:
+            median_utility_dict[n] = 0.0
 
     if len(selected_clients) == 0:
         selected_clients = [n for n in names if median_utility_dict[n] > 0.0]
@@ -177,11 +192,13 @@ def run_cbrfl(helper, target_model, updates, epoch, committee_members=None):
     g_a = _param_float(helper.params, 'cbrfl_gompertz_a', 1.0)
     g_b = _param_float(helper.params, 'cbrfl_gompertz_b', 1.0)
     g_c = _param_float(helper.params, 'cbrfl_gompertz_c', 1.0)
-    impact_dict = {n: _gompertz_weight(median_utility_dict[n], g_a, g_b, g_c) for n in selected_clients}
+    selected_utilities = torch.tensor([median_utility_dict[n] for n in selected_clients], dtype=torch.float32, device=device)
+    impact_weights = _gompertz_weight_tensor(selected_utilities, g_a, g_b, g_c)
+    impact_dict = {n: float(w.item()) for n, w in zip(selected_clients, impact_weights)}
 
-    weights = torch.tensor([impact_dict[n] for n in selected_clients], dtype=torch.float32)
+    weights = impact_weights
     if float(torch.sum(weights).item()) <= 0:
-        weights = torch.ones(len(selected_clients), dtype=torch.float32)
+        weights = torch.ones(len(selected_clients), dtype=torch.float32, device=device)
     agg_update = helper.weighted_average_oracle([delta_by_name[n] for n in selected_clients], weights)
 
     # Momentum
@@ -199,16 +216,15 @@ def run_cbrfl(helper, target_model, updates, epoch, committee_members=None):
         helper.cbrfl_global_lr = _param_float(helper.params, 'cbrfl_global_lr_init', 1.0)
     eta_t = helper.cbrfl_global_lr
     if helper.cbrfl_prev_momentum is not None:
-        curr_flat = _flatten_update(helper, m_t)
-        prev_flat = _flatten_update(helper, helper.cbrfl_prev_momentum)
-        dot_val = float(np.dot(curr_flat, prev_flat))
+        curr_flat = _flatten_update_tensor(m_t)
+        prev_flat = _flatten_update_tensor(helper.cbrfl_prev_momentum)
+        dot_val = float(torch.dot(curr_flat, prev_flat).item())
         dot_clip = _param_float(helper.params, 'cbrfl_global_lr_dot_clip', 0.1)
-        dot_val = float(np.clip(dot_val, -dot_clip, dot_clip))
+        dot_val = max(-dot_clip, min(dot_clip, dot_val))
         eta_t = eta_t + dot_val
-    eta_t = float(np.clip(
-        eta_t,
+    eta_t = float(max(
         _param_float(helper.params, 'cbrfl_global_lr_min', 1e-4),
-        _param_float(helper.params, 'cbrfl_global_lr_max', 5.0),
+        min(_param_float(helper.params, 'cbrfl_global_lr_max', 5.0), eta_t),
     ))
     helper.cbrfl_global_lr = eta_t
     helper.cbrfl_prev_momentum = {k: v.clone().detach() for k, v in m_t.items()}
