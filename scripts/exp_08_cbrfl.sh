@@ -9,6 +9,7 @@ set -euo pipefail
 # 用法：
 #   bash scripts/exp_08_cbrfl.sh
 #   bash scripts/exp_08_cbrfl.sh run_445 run_480
+#   bash scripts/exp_08_cbrfl.sh run_476 run_477 --ipm_val=-1.0
 #
 # 可选环境变量：
 #   CONFIG_FILE=scripts/configs/exp_08_cbrfl_runs.csv
@@ -86,6 +87,7 @@ START_INPUT=${1:-run_445}
 END_INPUT=${2:-run_480}
 START_ID=$(normalize_run_id "${START_INPUT}")
 END_ID=$(normalize_run_id "${END_INPUT}")
+EXTRA_ARGS=("${@:3}")
 
 if (( START_ID > END_ID )); then
   echo "Start run must be <= end run. Got: ${START_INPUT} .. ${END_INPUT}" >&2
@@ -167,6 +169,10 @@ start_run() {
     --seed=0
     --"${run_tag}"
   )
+
+  if (( ${#EXTRA_ARGS[@]} > 0 )); then
+    cmd+=("${EXTRA_ARGS[@]}")
+  fi
 
   if [[ "${attack_method}" == "sf" ]]; then
     cmd+=(--sf_scale="${SF_SCALE}")

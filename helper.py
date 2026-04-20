@@ -818,8 +818,11 @@ class Helper:
                 delta_models.append(data[2])
                 names.append(name)
 
-        ipm_val = self.params['ipm_val']
-        if ipm_val is None:
+        ipm_val = self.params.get('ipm_val', 1.6)
+        try:
+            ipm_val = float(ipm_val)
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid ipm_val={ipm_val}, fallback to default 1.6")
             ipm_val = 1.6
 
         if target_names is None:
