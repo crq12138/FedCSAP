@@ -413,6 +413,13 @@ def run(params_loaded):
         weight_accumulator = helper.init_weight_accumulator(helper.target_model)
 
         temp_global_epoch = epoch + helper.params['aggr_epoch_interval'] - 1
+        if helper.params['attack_methods'] == config.ATTACK_SF:
+            sf_scale = float(helper.params.get('sf_scale', 1.0))
+            logger.warning(
+                '[sf-eval] pre-evaluation epoch=%s SF_SCALE=%s',
+                temp_global_epoch,
+                sf_scale,
+            )
 
         epoch_loss, epoch_acc, epoch_corret, epoch_total = test.Mytest(helper=helper, epoch=temp_global_epoch,
                                                                        model=helper.target_model, is_poison=False,

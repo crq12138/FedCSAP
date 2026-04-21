@@ -134,9 +134,9 @@ cbrfl_gompertz_b: {{ cbrfl_gompertz_b|default(1.0) }}
 cbrfl_gompertz_c: {{ cbrfl_gompertz_c|default(1.0) }}
 
 # adaptive global learning rate
-cbrfl_global_lr_init: {{ cbrfl_global_lr_init|default(1.0) }}
+cbrfl_global_lr_init: {{ cbrfl_global_lr_init|default(0.01) }}
 cbrfl_global_lr_min: {{ cbrfl_global_lr_min|default(1e-4) }}
-cbrfl_global_lr_max: {{ cbrfl_global_lr_max|default(5.0) }}
+cbrfl_global_lr_max: {{ cbrfl_global_lr_max|default(0.01) }}
 cbrfl_global_lr_dot_clip: {{ cbrfl_global_lr_dot_clip|default(0.1) }}
 
 # committee election

@@ -32,7 +32,7 @@ COMMITTEE_SIZE=${COMMITTEE_SIZE:-10}
 NO_MODELS=${NO_MODELS:-15}
 TRAIN_GRAD_CLIP=${TRAIN_GRAD_CLIP:-10}
 POISON_GRAD_CLIP=${POISON_GRAD_CLIP:-5}
-SF_SCALE=${SF_SCALE:-0.5}
+SF_SCALE=${SF_SCALE:-1.0}
 export PYTORCH_CUDA_ALLOC_CONF
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
@@ -166,6 +166,7 @@ start_run() {
     --poison_grad_clip="${POISON_GRAD_CLIP}"
     --seed=0
     --"${run_tag}"
+    --ipm_val=-1.0
   )
 
   if [[ "${attack_method}" == "sf" ]]; then

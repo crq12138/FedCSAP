@@ -84,10 +84,10 @@ PLOT_STYLE = {
     "figure_size": (7.2, 4.2),  # IEEE 双栏常见宽高比例
     "normal_marker_size": 90,
     "malicious_marker_size": 90,
-    "label_font_size": 20,
+    "label_font_size": 18,
     "tick_font_size": 18,
     "legend_font_size": 14,
-    "annotation_font_size": 16,
+    "annotation_font_size": 18,
     "annotation_offset": (3, 2),  # (x, y) 偏移，单位 points
     "grid_linewidth": 0.7,
     "spine_linewidth": 0.8,
@@ -528,6 +528,9 @@ def plot_compare_training_curves(
             ax.set_xlim(0, round_limit)
             if dataset == "MNIST":
                 ax.set_ylim(80.0, 100.0)
+            elif dataset == "CIFAR" and metric_key == "f1":
+                ax.set_ylim(0, 80)
+                ax.set_yticks(list(range(0, 81, 10)))
             elif dataset == "PATHMNIST" and metric_key == "f1":
                 ax.set_ylim(8, 70)
                 ax.set_yticks(list(range(10, 71, 10)))
@@ -540,9 +543,12 @@ def plot_compare_training_curves(
             ax.set_xticks(x_ticks)
             # ax.set_xlim(1, round_limit)
             for tick in [*ax.get_xticklabels(), *ax.get_yticklabels()]:
-                tick.set_fontproperties(simhei_font)
-                tick.set_fontsize(12)
-            legend_font = font_manager.FontProperties(fname=simhei_font_path, size=10)
+                tick.set_fontsize(PLOT_STYLE["tick_font_size"])
+            # legend_font = font_manager.FontProperties(
+            #     fname=simhei_font_path,
+            #     size=PLOT_STYLE["legend_font_size"],
+            # )
+            legend_font = font_manager.FontProperties(fname=simhei_font_path, size=12)
             ax.legend(prop=legend_font, ncol=2)
             fig.tight_layout()
             out_png = output_dir / f"{dataset}_{metric_key}_curves.png"

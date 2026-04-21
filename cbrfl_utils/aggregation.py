@@ -213,7 +213,7 @@ def run_cbrfl(helper, target_model, updates, epoch, committee_members=None):
 
     # Adaptive global learning rate
     if helper.cbrfl_global_lr is None:
-        helper.cbrfl_global_lr = _param_float(helper.params, 'cbrfl_global_lr_init', 1.0)
+        helper.cbrfl_global_lr = _param_float(helper.params, 'cbrfl_global_lr_init', 0.01)
     eta_t = helper.cbrfl_global_lr
     if helper.cbrfl_prev_momentum is not None:
         curr_flat = _flatten_update_tensor(m_t)
@@ -224,7 +224,7 @@ def run_cbrfl(helper, target_model, updates, epoch, committee_members=None):
         eta_t = eta_t + dot_val
     eta_t = float(max(
         _param_float(helper.params, 'cbrfl_global_lr_min', 1e-4),
-        min(_param_float(helper.params, 'cbrfl_global_lr_max', 5.0), eta_t),
+        min(_param_float(helper.params, 'cbrfl_global_lr_max', 0.01), eta_t),
     ))
     helper.cbrfl_global_lr = eta_t
     helper.cbrfl_prev_momentum = {k: v.clone().detach() for k, v in m_t.items()}
