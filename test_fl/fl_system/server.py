@@ -10,7 +10,7 @@ import torch
 from .aggregators import build_aggregator
 from .client import FLClient
 
-from .inversefed.reconstruction_algorithms import GradientReconstructor
+from .inversefed.reconstruction_algorithms import GradientReconstructor, reconstruction_costs
 import torchvision
 import os
 
@@ -302,8 +302,37 @@ class FLServer:
                 # 设置重建的图像数量严格等于 num_images（默认跟随 batch_size）
                 rec_machine = GradientReconstructor(attack_model, (dm, ds), config, num_images=attack_num_images)
                 
-                # 执行重建计算
+                # 执行重建计算（优化目标默认对齐 attack 输入梯度）
                 output, stats = rec_machine.reconstruct(pseudo_gradient, attack_y, img_shape=(3, 32, 32))
+
+                # 额外指标：重建结果相对于“原始受害者梯度（未混合、未加噪）”的匹配损失，
+                # 用于分析在混合/加噪防护下，重建图像与真实目标梯度之间的偏离程度。
+                attack_model.zero_grad(set_to_none=True)
+                clean_target_x = target_x.to(attack_device)
+                clean_target_y = target_y.to(attack_device)
+                clean_target_loss = torch.nn.CrossEntropyLoss(reduction="mean")(
+                    attack_model(clean_target_x), clean_target_y
+                )
+                clean_target_gradient = torch.autograd.grad(
+                    clean_target_loss, attack_model.parameters(), create_graph=False
+                )
+                clean_target_gradient = [g.detach() for g in clean_target_gradient]
+
+                attack_model.zero_grad(set_to_none=True)
+                recon_loss = torch.nn.CrossEntropyLoss(reduction="mean")(
+                    attack_model(output.to(attack_device)), clean_target_y
+                )
+                recon_gradient = torch.autograd.grad(
+                    recon_loss, attack_model.parameters(), create_graph=False
+                )
+                recon_gradient = [g.detach() for g in recon_gradient]
+                stats["vs_original_grad"] = reconstruction_costs(
+                    [recon_gradient],
+                    clean_target_gradient,
+                    cost_fn=config["cost_fn"],
+                    indices=config["indices"],
+                    weights=config["weights"],
+                )
                 
                 # 保存重建图像（从模型输入域反归一化到可视化域 [0, 1]）
                 output_vis = torch.clamp(output.detach().cpu() * ds.detach().cpu() + dm.detach().cpu(), 0.0, 1.0)
@@ -350,6 +379,7 @@ class FLServer:
                     "reconstruction_path": save_path,
                     "label_path": label_save_path,
                     "reconstruction_loss_opt": float(stats["opt"]),
+                    "reconstruction_loss_vs_original_grad": float(stats["vs_original_grad"]),
                 }
                 with open(summary_save_path, "w", encoding="utf-8") as f:
                     json.dump(summary_payload, f, ensure_ascii=False, indent=2)
@@ -357,7 +387,8 @@ class FLServer:
                 print(
                     f"[*] 攻击完成，图像已保存至 {save_path}，标签已保存至 {label_save_path}，"
                     f"汇总已保存至 {summary_save_path}。"
-                    f"最优损失: {stats['opt']: .4f}\n"
+                    f"最优损失(对攻击输入梯度): {stats['opt']: .4f} | "
+                    f"对原始受害者梯度损失: {stats['vs_original_grad']: .4f}\n"
                 )
             # ==========================================
 
