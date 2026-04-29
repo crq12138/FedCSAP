@@ -64,6 +64,8 @@ SCHEME_NAME_CANONICAL = {
     "foolsgold": "FoolsGold",
     "fltrust": "FLTrust",
     "afa": "AFA",
+    "frfl": "FRFL",
+    "cbrfl": "CBRFL",
     "fedcsap": "FedCSAP",
 }
 SCHEME_MARKERS = {
@@ -73,6 +75,8 @@ SCHEME_MARKERS = {
     "FoolsGold": "D",
     "FLTrust": "v",
     "AFA": "P",
+    "FRFL": "X",
+    "CBRFL": ">",
     "FedCSAP": "*",
 }
 SCHEME_COLORS = {
@@ -82,6 +86,8 @@ SCHEME_COLORS = {
     "FoolsGold": "#f1c40f",
     "FLTrust": "#9467bd",
     "AFA": "#8c564b",
+    "FRFL": "#17becf",
+    "CBRFL": "#7f7f7f",
     "FedCSAP": "#d62728",
 }
 
@@ -555,12 +561,29 @@ def plot_compare_training_curves(
             #     size=PLOT_STYLE["legend_font_size"],
             # )
             legend_font = font_manager.FontProperties(fname=simhei_font_path, size=12)
-            ax.legend(prop=legend_font, ncol=2)
+            handles, labels = ax.get_legend_handles_labels()
+            if "FedCSAP" in labels:
+                ordered_pairs = [
+                    (h, l)
+                    for h, l in zip(handles, labels)
+                    if l != "FedCSAP"
+                ]
+                fedcsap_pairs = [
+                    (h, l)
+                    for h, l in zip(handles, labels)
+                    if l == "FedCSAP"
+                ]
+                ordered_pairs.extend(fedcsap_pairs)
+                handles = [h for h, _ in ordered_pairs]
+                labels = [l for _, l in ordered_pairs]
+            ax.legend(handles, labels, prop=legend_font, ncol=2)
             fig.tight_layout()
             out_png = output_dir / f"{dataset}_{metric_key}_curves.png"
             out_eps = output_dir / f"{dataset}_{metric_key}_curves.eps"
+            out_pdf = output_dir / f"{dataset}_{metric_key}_curves.pdf"
             fig.savefig(out_png, dpi=300)
             fig.savefig(out_eps, format="eps")
+            fig.savefig(out_pdf, format="pdf")
             plt.close(fig)
             saved.extend([out_png, out_eps])
             print(f"绘图完成: {out_png}")

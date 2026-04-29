@@ -65,6 +65,7 @@ start_run() {
     --aggregation_methods="${aggregation_method}"
     --attack_methods="${attack_method}"
     --mal_pcnt="${mal_pcnt}"
+    --poisoning_per_batch=60
     --resumed_model=false
     --epochs=200
     --number_of_total_participants=25
@@ -73,6 +74,7 @@ start_run() {
     --noniid=sampling_dirichlet
     --dirichlet_alpha="${dirichlet_alpha}"
     --eta=0.1
+    --committee_election=reputation
     --fedcsap_bottom_q="${fedcsap_bottom_q}"
     --seed=0
     --"${run_tag}"
