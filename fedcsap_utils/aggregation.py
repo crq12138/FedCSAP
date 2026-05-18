@@ -159,6 +159,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
     if bottom_q is None:
         bottom_q = 0.2
 
+    risk_eval_t0 = time.time()
     # baseline per-class F1/acc profile for previous global model
     baseline_t0 = time.time()
     baseline_profile = {}
