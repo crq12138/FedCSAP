@@ -150,6 +150,28 @@ def configure_run_logging(run_name):
     sys.stderr = run_log
     return run_folder, run_log_path
 
+
+
+def init_timing_csv(run_folder):
+    timing_csv_path = os.path.join(run_folder, 'timing_details.csv')
+    with open(timing_csv_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['epoch', 'module', 'duration_sec', 'dataset', 'aggregation_method', 'attack_method'])
+    return timing_csv_path
+
+
+def append_timing_row(timing_csv_path, epoch, module, duration_sec, params_loaded):
+    with open(timing_csv_path, 'a', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            int(epoch),
+            str(module),
+            float(duration_sec),
+            str(params_loaded.get('type')),
+            str(params_loaded.get('aggregation_methods')),
+            str(params_loaded.get('attack_methods')),
+        ])
+
 def run(params_loaded):
     params_loaded = defaultdict(lambda: None, params_loaded)
     params_loaded['seed'] = int(params_loaded.get('seed', 1))
@@ -205,6 +227,8 @@ def run(params_loaded):
         helper.prepare_cbrfl_shared_validation()
     helper.create_model()
     logger.info(f'create model done')
+
+    timing_csv_path = init_timing_csv(helper.folder_path)
     ### Create models
     if helper.params['is_poison']:
         logger.info(f"Poisoned following participants: {(helper.adversarial_namelist)}")
@@ -229,7 +253,9 @@ def run(params_loaded):
         start_time = time.time()
         t = time.time()
 
+        committee_t0 = time.time()
         committee_members = helper.elect_committee(epoch)
+        append_timing_row(timing_csv_path, epoch, 'committee_election', time.time() - committee_t0, helper.params)
         committee_set = set(committee_members)
         committee_malicious_count = len([m for m in committee_members if m in helper.adversarial_namelist])
         committee_takeover = committee_malicious_count > (len(committee_members) / 2.0) if len(committee_members) > 0 else False
@@ -306,11 +332,13 @@ def run(params_loaded):
 
         logger.info(f'Server Epoch:{epoch} choose non-committee agents : {agent_name_keys}.')
         logger.info(f'Decentralized committee for epoch {epoch}: {committee_members}')
+        train_t0 = time.time()
         epochs_submit_update_dict, num_samples_dict = train.train(helper=helper, start_epoch=epoch,
                                                                   local_model=helper.local_model,
                                                                   target_model=helper.target_model,
                                                                   is_poison=helper.params['is_poison'],
                                                                   agent_name_keys=agent_name_keys)
+        append_timing_row(timing_csv_path, epoch, 'dataset_training', time.time() - train_t0, helper.params)
         # for agnt in helper.local_models.keys():
         #     print(helper.local_models[agnt].state_dict())
         logger.info(f'time spent on training: {time.time() - t}')
@@ -322,6 +350,7 @@ def run(params_loaded):
         if helper.params['aggregation_methods'] not in [config.AGGR_FRFL, config.AGGR_CBRFL]:
             helper.sample_public_validation_loader(epoch)
 
+        mixed_update_t0 = time.time()
         if helper.params['attack_methods'] == config.ATTACK_IPM:
             updates = helper.ipm_attack(updates)
         elif helper.params['attack_methods'] == config.ATTACK_MIXED_8:
@@ -351,6 +380,7 @@ def run(params_loaded):
                 print("[mixed-attack] IPM rewrite applied.")
             elif ipm_adversaries:
                 print("[mixed-attack] IPM rewrite skipped (unsupported aggregation method).")
+        append_timing_row(timing_csv_path, epoch, 'mixed_update_generation', time.time() - mixed_update_t0, helper.params)
 
         if committee_takeover_attack_triggered and helper.params['aggregation_methods'] != config.AGGR_FEDCSAP:
             take_over_scale = 1.0
