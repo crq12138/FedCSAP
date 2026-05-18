@@ -175,6 +175,26 @@ def parse_args() -> argparse.Namespace:
         help="可选：run_id, dataset, scheme 三列映射文件；不传则使用内置映射。",
     )
 
+    timing_parser = subparsers.add_parser(
+        "fedcsap_timing_modules",
+        help="绘制 FedCSAP 在不同数据集下各模块平均耗时对比柱状图",
+    )
+    timing_parser.add_argument(
+        "--runs-root",
+        type=Path,
+        default=Path("runs"),
+        help="runs 根目录，目录结构示例: runs/run_484/timing_details.csv",
+    )
+    timing_parser.add_argument("--cifar10-run", required=True, help="CIFAR10 对应的单个 run 目录名，如 run_484")
+    timing_parser.add_argument("--pathmnist-run", required=True, help="PathMNIST 对应的单个 run 目录名，如 run_485")
+    timing_parser.add_argument("--mnist-run", required=True, help="MNIST 对应的单个 run 目录名，如 run_486")
+    timing_parser.add_argument(
+        "--output",
+        type=Path,
+        default=PLOT_OUTPUT_DIR / "fedcsap_timing_modules.png",
+        help="输出文件路径（文件名后缀可省略，将固定导出 png/eps）",
+    )
+
     return parser.parse_args()
 
 
@@ -595,6 +615,127 @@ def plot_compare_training_curves(
     return saved
 
 
+def _load_timing_rows_from_runs(runs_root: Path, run_names: list[str]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for run_name in run_names:
+        csv_path = runs_root / run_name / "timing_details.csv"
+        if not csv_path.exists():
+            raise PlotDataError(f"缺少文件: {csv_path}")
+        with csv_path.open("r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            required = {"module", "duration_sec"}
+            fields = set(reader.fieldnames or [])
+            if not required.issubset(fields):
+                raise PlotDataError(f"{csv_path} 缺失必要列: module,duration_sec")
+            rows.extend(reader)
+    if not rows:
+        raise PlotDataError("未读取到 timing 数据。")
+    return rows
+
+
+def _mean_module_duration(rows: list[dict[str, str]]) -> dict[str, float]:
+    sums: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for row in rows:
+        module = str(row.get("module", "")).strip()
+        if not module:
+            continue
+        try:
+            duration = float(str(row.get("duration_sec", "")).strip())
+        except ValueError:
+            continue
+        sums[module] = sums.get(module, 0.0) + duration
+        counts[module] = counts.get(module, 0) + 1
+    means = {m: (sums[m] / counts[m]) for m in sums if counts.get(m, 0) > 0}
+    if not means:
+        raise PlotDataError("timing 数据中没有可用的模块耗时。")
+    return means
+
+
+def plot_fedcsap_timing_modules(
+    runs_root: Path,
+    cifar10_run: str,
+    pathmnist_run: str,
+    mnist_run: str,
+    output: Path,
+) -> Path:
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from matplotlib import font_manager
+    except ModuleNotFoundError as exc:
+        raise PlotDataError("未安装必要依赖，请先执行: pip install matplotlib numpy") from exc
+
+    try:
+        simhei_font_path = font_manager.findfont("SimHei", fallback_to_default=False)
+    except ValueError as exc:
+        raise PlotDataError("未找到 SimHei 字体，请先安装 SimHei（simhei.ttf）。") from exc
+    simhei_font = font_manager.FontProperties(fname=simhei_font_path)
+
+    dataset_rows = {
+        "MNIST": _load_timing_rows_from_runs(runs_root, [mnist_run]),
+        "CIFAR10": _load_timing_rows_from_runs(runs_root, [cifar10_run]),
+        "PathMNIST": _load_timing_rows_from_runs(runs_root, [pathmnist_run]),
+    }
+    dataset_means = {name: _mean_module_duration(rows) for name, rows in dataset_rows.items()}
+
+    module_order = sorted({m for means in dataset_means.values() for m in means.keys()})
+    if not module_order:
+        raise PlotDataError("没有可绘制的模块。")
+
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["SimHei", "DejaVu Sans"],
+        "axes.unicode_minus": False,
+        "axes.grid": True,
+        "grid.linestyle": "--",
+        "grid.alpha": 0.35,
+    })
+
+    x = np.arange(len(module_order))
+    width = 0.25
+    fig, ax = plt.subplots(figsize=(10.5, 4.8))
+
+    styles = [
+        ("MNIST", "#1f77b4", "//", -width),
+        ("CIFAR10", "#ff7f0e", "..", 0.0),
+        ("PathMNIST", "#2ca02c", "xx", width),
+    ]
+    for ds_name, color, hatch, offset in styles:
+        means = dataset_means[ds_name]
+        y_vals = [means.get(module, 0.0) for module in module_order]
+        ax.bar(
+            x + offset,
+            y_vals,
+            width=width,
+            label=ds_name,
+            color=color,
+            hatch=hatch,
+            edgecolor="black",
+            linewidth=0.8,
+            alpha=0.9,
+        )
+
+    ax.set_xlabel("模块", fontproperties=simhei_font, fontsize=14)
+    ax.set_ylabel("平均耗时（秒）", fontproperties=simhei_font, fontsize=14)
+    ax.set_xticks(x)
+    ax.set_xticklabels(module_order, rotation=20, ha="right", fontproperties=simhei_font)
+    ax.legend(prop=simhei_font)
+    fig.tight_layout()
+
+    output_stem = output.stem if output.suffix else output.name
+    out_dir = output.parent if output.parent != Path("") else PLOT_OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    png_path = out_dir / f"{output_stem}.png"
+    eps_path = out_dir / f"{output_stem}.eps"
+    fig.savefig(png_path, dpi=300)
+    fig.savefig(eps_path, format="eps")
+    plt.close(fig)
+    print(f"绘图完成: {png_path}")
+    print(f"绘图完成: {eps_path}")
+    return png_path
+
+
 def main() -> None:
     args = parse_args()
 
@@ -614,6 +755,16 @@ def main() -> None:
             run_map_csv=args.run_map_csv,
         )
         print(f"主输出文件: {outs[0]}")
+        return
+    if args.plot_type == "fedcsap_timing_modules":
+        out = plot_fedcsap_timing_modules(
+            runs_root=args.runs_root,
+            cifar10_run=args.cifar10_run,
+            pathmnist_run=args.pathmnist_run,
+            mnist_run=args.mnist_run,
+            output=args.output,
+        )
+        print(f"主输出文件: {out}")
         return
 
     raise PlotDataError(f"不支持的 plot_type: {args.plot_type}")
