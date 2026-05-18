@@ -161,10 +161,12 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
 
     risk_eval_t0 = time.time()
     # baseline per-class F1/acc profile for previous global model
+    baseline_t0 = time.time()
     baseline_profile = {}
     for val_name in validators:
         val_score_by_class, _, _ = validation_test(helper, target_model, val_name)
         baseline_profile[val_name] = [float(val_score_by_class[i]) for i in range(num_of_classes)]
+    baseline_elapsed = time.time() - baseline_t0
 
     sanitized_delta_models = []
     flat_updates = []
@@ -196,6 +198,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
 
     representative_scores = []
     per_client_delta_f1 = {}
+    risk_eval_t0 = time.time()
     for idx, rep_name in enumerate(names):
         rep_model = helper.new_model()
         rep_model.copy_params(helper.target_model.state_dict())
@@ -272,6 +275,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
     if os.path.exists(timing_csv_path):
         with open(timing_csv_path, 'a', newline='') as f:
             writer = csv.writer(f)
+            writer.writerow([int(epoch), 'class_baseline_profile', float(baseline_elapsed), str(helper.params.get('type')), str(helper.params.get('aggregation_methods')), str(helper.params.get('attack_methods'))])
             writer.writerow([int(epoch), 'class_risk_assessment', float(risk_eval_elapsed), str(helper.params.get('type')), str(helper.params.get('aggregation_methods')), str(helper.params.get('attack_methods'))])
             writer.writerow([int(epoch), 'committee_matrix_consensus', float(consensus_elapsed), str(helper.params.get('type')), str(helper.params.get('aggregation_methods')), str(helper.params.get('attack_methods'))])
     low_cluster_clients = [names[i] for i in range(len(names)) if i not in selected_indices]
@@ -327,13 +331,16 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
             layer_data.add_(update_per_layer.to(layer_data.dtype))
 
     logger.info(
-        'fedcsap epoch %s: validators=%s, rep_scores=%s, selected_clients=%s, low_cluster_clients=%s, committee_takeover=%s, elapsed=%.2fs',
+        'fedcsap epoch %s: validators=%s, rep_scores=%s, selected_clients=%s, low_cluster_clients=%s, committee_takeover=%s, baseline=%.2fs, class_risk=%.2fs, consensus=%.2fs, elapsed=%.2fs',
         epoch,
         validators,
         [round(s, 6) for s in representative_scores],
         selected_clients,
         low_cluster_clients,
         committee_takeover,
+        baseline_elapsed,
+        risk_eval_elapsed,
+        consensus_elapsed,
         time.time() - start,
     )
 
