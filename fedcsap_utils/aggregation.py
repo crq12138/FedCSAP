@@ -1,5 +1,7 @@
 import logging
 import time
+import csv
+import os
 import copy
 import numpy as np
 import torch
@@ -157,6 +159,7 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
     if bottom_q is None:
         bottom_q = 0.2
 
+    risk_eval_t0 = time.time()
     # baseline per-class F1/acc profile for previous global model
     baseline_profile = {}
     for val_name in validators:
@@ -252,6 +255,9 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         else:
             per_client_delta_f1[rep_name] = [0.0 for _ in range(num_of_classes)]
 
+    risk_eval_elapsed = time.time() - risk_eval_t0
+
+    consensus_t0 = time.time()
     # 1D kmeans with min/max anchors
     high_cluster_flags = _one_dim_kmeans_split(representative_scores)
     selected_indices = _select_stable_clients(representative_scores, high_cluster_flags)
@@ -260,6 +266,14 @@ def run_fedcsap(helper, target_model, updates, epoch, committee_members=None):
         selected_indices = [int(np.argmax(representative_scores))]
 
     selected_clients = [names[i] for i in selected_indices]
+    consensus_elapsed = time.time() - consensus_t0
+
+    timing_csv_path = os.path.join(helper.folder_path, 'timing_details.csv')
+    if os.path.exists(timing_csv_path):
+        with open(timing_csv_path, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([int(epoch), 'class_risk_assessment', float(risk_eval_elapsed), str(helper.params.get('type')), str(helper.params.get('aggregation_methods')), str(helper.params.get('attack_methods'))])
+            writer.writerow([int(epoch), 'committee_matrix_consensus', float(consensus_elapsed), str(helper.params.get('type')), str(helper.params.get('aggregation_methods')), str(helper.params.get('attack_methods'))])
     low_cluster_clients = [names[i] for i in range(len(names)) if i not in selected_indices]
     helper.update_participant_reputation(low_cluster_clients, names)
 

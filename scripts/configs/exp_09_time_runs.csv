@@ -1,0 +1,4 @@
+run_tag,type,aggregation_method
+run_484,cifar,fedcsap
+run_485,pathmnist,fedcsap
+run_486,mnist,fedcsap
