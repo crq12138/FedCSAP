@@ -96,9 +96,9 @@ PLOT_STYLE = {
     "figure_size": (7.2, 4.2),  # IEEE 双栏常见宽高比例
     "normal_marker_size": 90,
     "malicious_marker_size": 90,
-    "label_font_size": 18,
+    "label_font_size": 20,
     "tick_font_size": 18,
-    "legend_font_size": 14,
+    "legend_font_size": 20,
     "annotation_font_size": 18,
     "annotation_offset": (3, 2),  # (x, y) 偏移，单位 points
     "grid_linewidth": 0.7,
@@ -298,6 +298,7 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
             "font.sans-serif": ["SimHei", "DejaVu Sans"],
             "axes.unicode_minus": False,
             "axes.linewidth": PLOT_STYLE["spine_linewidth"],
+            "mathtext.fontset": "stix",
             "axes.grid": True,
             "grid.linestyle": "--",
             "grid.alpha": 0.35,
@@ -334,7 +335,8 @@ def plot_fedcsap_r_vs_committee(details_csv: Path, run_id: str, output: Path, ti
 
     # 需求：图中不显示标题（title 参数仅为兼容保留）
     _ = title
-    ax.set_xlabel("信誉值 R", fontsize=PLOT_STYLE["label_font_size"], fontproperties=simhei_font)
+    # ax.set_xlabel(r"信誉值 $\mathrm{Rep}$", fontsize=PLOT_STYLE["label_font_size"], fontproperties=simhei_font)
+    ax.set_xlabel(r"信誉值 $\mathrm{Rep}$", fontsize=PLOT_STYLE["label_font_size"])
     ax.set_ylabel("委员会当选次数", fontsize=PLOT_STYLE["label_font_size"], fontproperties=simhei_font)
     # 实例化一个专用于刻度的 FontProperties，并赋予指定字号
     tick_font = font_manager.FontProperties(
